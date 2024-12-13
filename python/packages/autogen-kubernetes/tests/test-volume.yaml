@@ -1,0 +1,4 @@
+name: test-volume
+emptyDir:
+  medium: Memory
+  sizeLimit: "5Mi"

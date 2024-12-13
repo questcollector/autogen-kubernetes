@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  annotations:
+    test: "true"
+  labels:
+    run: test-pod
+  name: test-pod
+  namespace: default
+spec:
+  containers:
+  - args:
+    - sh
+    - -c
+    - while true;do sleep 5; done
+    image: python:3-slim
+    name: autogen-executor
