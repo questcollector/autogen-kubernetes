@@ -1,6 +1,6 @@
 # autogen-kubernetes
 
-This is autogen kubernetes extension which provides code executor on kuberentes pod
+This is autogen(>=0.4) kubernetes extension which provides code executor on kuberentes pod
 
 We plan to add "autogen" features needs Kubernetes features.
 
