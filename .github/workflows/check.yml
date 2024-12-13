@@ -9,9 +9,17 @@ on:
   push:
     branches:
     - main
+    paths:
+    - "python/**"
+    - "!python/packages/autogen-kubernetes/LICENSE-CODE"
+    - "!python/.gitignore"
   pull_request:
     branches:
     - main
+    paths:
+    - "python/**"
+    - "!python/packages/autogen-kubernetes/LICENSE-CODE"
+    - "!python/.gitignore"
 
 jobs:
   check-with-kind:
