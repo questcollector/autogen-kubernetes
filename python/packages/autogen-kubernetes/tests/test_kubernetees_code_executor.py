@@ -9,6 +9,8 @@ from typing import Any
 
 import httpx as hx
 import pytest
+from autogen_agentchat.agents import CodeExecutorAgent
+from autogen_agentchat.messages import TextMessage
 from autogen_core import CancellationToken
 from autogen_core.code_executor import CodeBlock
 from autogen_kubernetes.code_executors import PodCommandLineCodeExecutor
@@ -264,3 +266,20 @@ async def test_func_modules_with_requirements(generated_pod_name_regex: str) -> 
         assert re.fullmatch(generated_pod_name_regex, executor._pod_name) is not None
         assert code_result.exit_code == 0
         assert "success" in code_result.output
+
+
+@pytest.mark.skipif(not state_kubernetes_enabled, reason="kubernetes not accessible")
+@pytest.mark.asyncio
+async def test_with_code_executor_agent() -> None:
+    async with PodCommandLineCodeExecutor() as executor:
+        code_executor_agent = CodeExecutorAgent("code_executor", code_executor=executor)
+        task = TextMessage(
+            content="""Here is some code
+```python
+print('Hello world!')
+```
+""",
+            source="user",
+        )
+        response = await code_executor_agent.on_messages([task], CancellationToken())
+        assert "Hello world!" in response.chat_message.content

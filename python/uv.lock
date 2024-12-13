@@ -201,6 +201,18 @@ wheels = [
 ]
 
 [[package]]
+name = "autogen-agentchat"
+version = "0.4.0.dev11"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "autogen-core" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/84/d6/b5141bb82f16774c582c990a6c53511ce580d1f8c809987ef546a78053c5/autogen_agentchat-0.4.0.dev11.tar.gz", hash = "sha256:d19091afb9f19f8a3ae7b91b88e5269cea39c696a9dde3b7b95b85f70343f0f3", size = 47859 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/96/21/93cfb1590c1bab01a1addaf1bdd0b1849c710fbe3cf408b469e59c751bd4/autogen_agentchat-0.4.0.dev11-py3-none-any.whl", hash = "sha256:f53d5226b8bd2fa069e48e6481a5e6fa9b1620daa5b60161f5f4423d4efa85d5", size = 57428 },
+]
+
+[[package]]
 name = "autogen-core"
 version = "0.4.0.dev11"
 source = { registry = "https://pypi.org/simple" }
@@ -236,6 +248,7 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "autogen-agentchat" },
     { name = "kubernetes-stubs" },
     { name = "types-pyyaml" },
 ]
@@ -251,6 +264,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "autogen-agentchat", specifier = ">=0.4.0.dev9" },
     { name = "kubernetes-stubs" },
     { name = "types-pyyaml" },
 ]

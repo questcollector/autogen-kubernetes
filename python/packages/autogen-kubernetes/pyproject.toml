@@ -25,6 +25,7 @@ dependencies = [
 
 [tool.uv]
 dev-dependencies = [
+    "autogen-agentchat>=0.4.0.dev9",
     "types-pyyaml",
     "kubernetes-stubs"
 ]
