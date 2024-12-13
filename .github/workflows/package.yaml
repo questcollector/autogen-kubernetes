@@ -2,10 +2,6 @@ name: Deploy package
 
 on:
   workflow_dispatch:
-    inputs:
-      ref:
-        description: 'Tag to deploy'
-        required: true
   push:
     tags:
     - "v*"
@@ -15,15 +11,12 @@ jobs:
     environment:
       name: package
     runs-on: ubuntu-latest
+    if: ${{ github.ref_type == 'tag' }}
     permissions:
       id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.inputs.ref }}
-      # Require ref to be a tag
-      - run: git show-ref --verify refs/tags/${{ github.event.inputs.ref }}
       - uses: astral-sh/setup-uv@v3
         name: Setup uv
         with:

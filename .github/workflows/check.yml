@@ -2,16 +2,14 @@ name: Check branch with Kubernetes
 
 on:
   workflow_dispatch:
-    inputs:
-      branches:
-        description: "Enter branch to check"
-        required: true
-  push:
-    branches:
-    - main
   pull_request:
     branches:
     - main
+    paths:
+    - "python/**"
+    - "!python/packages/autogen-kubernetes/LICENSE-CODE"
+    - "!python/packages/autogen-kubernetes/*.md"
+    - "!python/.gitignore"
 
 jobs:
   check-with-kind:
@@ -21,10 +19,14 @@ jobs:
         name: Checkout code
       - uses: helm/kind-action@v1
         name: Create k8s kind Cluster
+        with:
+          cluster_name: test-cluster
+      - name: Export kubeconfig
+        run: |
+          kind export kubeconfig --name test-cluster
       - name: Verify kubeconfig and Cluster
         run: |
-          echo "Using kubeconfig at: $KUBECONFIG"
-          kubectl get nodes
+          kubectl --kubeconfig=$HOME/.kube/config get nodes
       - uses: astral-sh/setup-uv@v3
         name: Setup uv
         with:
