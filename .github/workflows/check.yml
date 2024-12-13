@@ -43,6 +43,7 @@ jobs:
         run: |
           source ${{ github.workspace }}/python/.venv/bin/activate
           poe fmt --check
+        working-directory: ./python
       - name: check source
         run: |
           source ${{ github.workspace }}/python/.venv/bin/activate
