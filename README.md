@@ -32,7 +32,7 @@ CommandLineCodeResult(exit_code=0, output='Hello, World!\n', code_file='/workspa
 
 in default options, pod will be created like
 
-```json
+```python
 {
   "kind": "Pod",
   "apiVersion": "v1",
@@ -476,8 +476,13 @@ uv sync --all-extras
 
 ## Licensing
 
-**MIT License**:
-Applicable to components derived from or influenced by autogen.
+This project is licensed under the MIT License.
+
+### Code Modification
+
+This project includes code from the microsoft/autogen project (licensed under the MIT License), 
+
+with modifications made by kiyoung you(questcollector), See the LICENSE file for details
 
 ### Third-Party Dependencies
 
@@ -496,4 +501,4 @@ This project uses the following third-party dependencies:
     License: MIT License
     Source: https://github.com/yaml/pyyaml
 
-For details, see the LICENCE file.
+For details, see the LICENCE-THIRD-PARTY file.
