@@ -2,18 +2,6 @@ name: Check branch with Kubernetes
 
 on:
   workflow_dispatch:
-    inputs:
-      branches:
-        description: "Enter branch to check"
-        required: true
-  push:
-    branches:
-    - main
-    paths:
-    - "python/**"
-    - "!python/packages/autogen-kubernetes/LICENSE-CODE"
-    - "!python/packages/autogen-kubernetes/*.md"
-    - "!python/.gitignore"
   pull_request:
     branches:
     - main
