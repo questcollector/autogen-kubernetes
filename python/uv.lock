@@ -224,7 +224,7 @@ wheels = [
 
 [[package]]
 name = "autogen-kubernetes"
-version = "0.4.0.dev9"
+version = "0.4.0.dev10"
 source = { editable = "packages/autogen-kubernetes" }
 dependencies = [
     { name = "autogen-core" },
