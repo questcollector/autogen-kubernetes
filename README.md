@@ -463,7 +463,7 @@ https://docs.astral.sh/uv/getting-started/installation/
 cd autogen-kubernetes/python
 uv venv --python python >=3.10
 source .venv/bin/activate
-uv sync --all-extras
+uv sync --locked --all-extras
 ```
 
 ### Common tasks
@@ -482,7 +482,7 @@ This project is licensed under the MIT License.
 
 This project includes code from the microsoft/autogen project (licensed under the MIT License), 
 
-with modifications made by kiyoung you(questcollector), See the LICENSE file for details
+with modifications made by kiyoung you(questcollector), See the [LICENSE-CODE](python/packages/autogen-kubernetes/LICENSE-CODE) file for details
 
 ### Third-Party Dependencies
 
