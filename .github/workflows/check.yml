@@ -37,6 +37,10 @@ jobs:
         run: |
           uv sync --locked --all-extras
         working-directory: ./python
+      - name: format check
+        run: |
+          source ${{ github.workspace }}/python/.venv/bin/activate
+          poe fmt --check
       - name: check source
         run: |
           source ${{ github.workspace }}/python/.venv/bin/activate
