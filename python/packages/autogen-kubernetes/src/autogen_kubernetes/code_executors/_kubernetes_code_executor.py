@@ -150,12 +150,8 @@ $functions"""
         timeout: int = 60,
         workspace_path: Union[Path, str] = Path("/workspace"),
         namespace: str = "default",
-        volume: Union[
-            dict[str, Any], str, Path, Type[kubernetes.client.models.V1Volume], None
-        ] = None,
-        pod_spec: Union[
-            dict[str, Any], str, Path, Type[kubernetes.client.models.V1Pod], None
-        ] = None,
+        volume: Union[dict[str, Any], str, Path, Type[kubernetes.client.models.V1Volume], None] = None,
+        pod_spec: Union[dict[str, Any], str, Path, Type[kubernetes.client.models.V1Pod], None] = None,
         kube_config_file: Union[Path, str, None] = None,
         auto_remove: bool = True,
         functions: Sequence[
@@ -174,9 +170,7 @@ $functions"""
         if isinstance(kube_config_file, str):
             kube_config_file = Path(kube_config_file)
 
-        if (
-            kube_config_file is None
-        ):  ## configuration from default kubeconfig or incluster
+        if kube_config_file is None:  ## configuration from default kubeconfig or incluster
             kubernetes.config.load_config()  # type: ignore
         else:
             kubernetes.config.load_config(config_file=kube_config_file)  # type: ignore
@@ -298,9 +292,7 @@ $functions"""
 
     def _define_pod_spec(self) -> Any:
         pod = kubernetes.client.models.V1Pod()
-        metadata = kubernetes.client.models.V1ObjectMeta(
-            name=self._pod_name, namespace=self._namespace
-        )
+        metadata = kubernetes.client.models.V1ObjectMeta(name=self._pod_name, namespace=self._namespace)
 
         executor_container = kubernetes.client.models.V1Container(
             args=["-c", "while true;do sleep 5; done"],
@@ -308,9 +300,7 @@ $functions"""
             name=self._container_name,
             image=self._image,
         )
-        pod_spec = kubernetes.client.models.V1PodSpec(
-            restart_policy="Never", containers=[executor_container]
-        )
+        pod_spec = kubernetes.client.models.V1PodSpec(restart_policy="Never", containers=[executor_container])
 
         pod.metadata = metadata
         pod.spec = pod_spec
@@ -357,9 +347,7 @@ $functions"""
         if write_func_file_exit_code != 0:
             write_func_file_stdout = "".join(write_func_file_stdout_msg)
             write_func_file_stderr = "".join(write_func_file_stderr_msg)
-            raise ValueError(
-                f"write function module file failed. \n{write_func_file_stdout}\n{write_func_file_stderr}"
-            )
+            raise ValueError(f"write function module file failed. \n{write_func_file_stdout}\n{write_func_file_stderr}")
 
         # Collect requirements
         lists_of_packages = [
@@ -394,9 +382,7 @@ $functions"""
             if install_packages_exit_code != 0:
                 install_packages_stdout = "".join(install_packages_stdout_msg)
                 install_packages_stderr = "".join(install_packages_stderr_msg)
-                raise ValueError(
-                    f"Pip install failed. \n{install_packages_stdout}\n{install_packages_stderr}"
-                )
+                raise ValueError(f"Pip install failed. \n{install_packages_stdout}\n{install_packages_stderr}")
 
         # Attempt to load the function file to check for syntax errors, imports etc.
         # TODO use exec
@@ -420,9 +406,7 @@ $functions"""
         if exec_exit_code != 0:
             exec_stdout = "".join(exec_stdout_msg)
             exec_stderr = "".join(exec_stderr_msg)
-            raise ValueError(
-                f"Functions failed to load: \n{exec_stdout}\n{exec_stderr}"
-            )
+            raise ValueError(f"Functions failed to load: \n{exec_stdout}\n{exec_stderr}")
 
         self._setup_functions_complete = True
 
@@ -430,9 +414,7 @@ $functions"""
         self, code_blocks: List[CodeBlock], cancellation_token: CancellationToken
     ) -> CommandLineCodeResult:  # type: ignore
         if self._pod is None or not self._running:
-            raise ValueError(
-                "Container is not running. Must first be started with either start or a context manager."
-            )
+            raise ValueError("Container is not running. Must first be started with either start or a context manager.")
 
         if len(code_blocks) == 0:
             raise ValueError("No code blocks to execute.")
@@ -512,9 +494,7 @@ $functions"""
                 break
 
         code_file = str(files[0]) if files else None
-        return CommandLineCodeResult(
-            exit_code=last_exit_code, output="".join(outputs), code_file=code_file
-        )
+        return CommandLineCodeResult(exit_code=last_exit_code, output="".join(outputs), code_file=code_file)
 
     async def execute_code_blocks(
         self, code_blocks: List[CodeBlock], cancellation_token: CancellationToken
@@ -528,18 +508,14 @@ $functions"""
             CommandlineCodeResult: The result of the code execution."""
 
         def raise_not_implemented() -> None:
-            raise NotImplementedError(
-                "Cancellation is not yet supported for PodCommandLineCodeExecutor"
-            )
+            raise NotImplementedError("Cancellation is not yet supported for PodCommandLineCodeExecutor")
 
         cancellation_token.add_callback(lambda: raise_not_implemented())
 
         if not self._setup_functions_complete:
             await self._setup_functions(cancellation_token)
 
-        return await self._execute_code_dont_check_setup(
-            code_blocks, cancellation_token
-        )
+        return await self._execute_code_dont_check_setup(code_blocks, cancellation_token)
 
     async def remove(self) -> None:
         await delete_pod(
@@ -576,9 +552,7 @@ $functions"""
                 self._pod["metadata"]["namespace"],
                 self._container_name,
             )
-            raise ValueError(
-                f"Failed to start container from image {self._image}. Logs: {logs_str}"
-            )
+            raise ValueError(f"Failed to start container from image {self._image}. Logs: {logs_str}")
 
         self._running = True
 
