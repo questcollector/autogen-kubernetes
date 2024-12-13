@@ -244,7 +244,7 @@ async def delete_pod(kube_config: Any, pod_name: str, namespace: str) -> Any:
             response.raise_for_status()
 
 
-# Source below based from: https://github.com/questcollector/autogen/blob/main/python/packages/autogen-ext/src/autogen_ext/code_executors/_common.py
+# Source below based from: https://github.com/microsoft/autogen/blob/main/python/packages/autogen-ext/src/autogen_ext/code_executors/_common.py
 # Credit to original authors
 # Original code Licensed under the MIT License.
 # See the License file for the full license text.
@@ -257,7 +257,7 @@ class CommandLineCodeResult(CodeResult):
     code_file: Optional[str]
 
 
-# Source below based from: https://github.com/questcollector/autogen/blob/main/python/packages/autogen-core/src/autogen_core/code_executor/_func_with_reqs.py
+# Source below based from: https://github.com/microsoft/autogen/blob/main/python/packages/autogen-core/src/autogen_core/code_executor/_func_with_reqs.py
 # Credit to original authors
 # Original code Licensed under the MIT License.
 # Modifications made by questcollector

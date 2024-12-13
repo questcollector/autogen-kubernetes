@@ -1,7 +1,7 @@
 # File based from: https://github.com/microsoft/autogen/blob/main/python/packages/autogen-ext/src/autogen_ext/code_executors/_docker_code_executor.py
 # Credit to original authors
 # Original code Licensed under the MIT License.
-# Modifications made by questcollector
+# Modifications made by kiyoung you(questcollector)
 # See the License file for the full license text.
 
 from __future__ import annotations
