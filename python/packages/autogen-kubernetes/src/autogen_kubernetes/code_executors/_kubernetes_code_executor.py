@@ -6,20 +6,19 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import re
 import shlex
 import sys
-import time
 import uuid
 import warnings
-from collections.abc import Coroutine, Sequence
+from collections.abc import Sequence
 from hashlib import sha256
 from pathlib import Path
 from types import TracebackType
 from typing import Any, Callable, ClassVar, Dict, List, Optional, ParamSpec, Type, Union
 
+import asyncio_atexit
 import kubernetes.client
 import kubernetes.config
 import yaml
@@ -27,16 +26,18 @@ from autogen_core import CancellationToken
 from autogen_core.code_executor import (
     CodeBlock,
     CodeExecutor,
+    FunctionWithRequirements,
+    FunctionWithRequirementsStr,
 )
-from httpx import HTTPStatusError
+from autogen_core.code_executor._func_with_reqs import (
+    build_python_functions_file,
+)
+from kubernetes.client.models import V1Container, V1ObjectMeta, V1Pod, V1PodSpec, V1Volume
 
 from ._utils import (
     POD_NAME_PATTERN,
     CommandLineCodeResult,
-    FunctionWithRequirements,
-    FunctionWithRequirementsStr,
     StreamChannel,
-    build_python_functions_file,
     clean_none_value,
     create_pod,
     delete_pod,
@@ -57,7 +58,6 @@ else:
 A = ParamSpec("A")
 
 
-# TODO autogen compatibility
 class PodCommandLineCodeExecutor(CodeExecutor):
     """Executes code through a command line environment in a container on Kubernetes Pod.
 
@@ -150,8 +150,8 @@ $functions"""
         timeout: int = 60,
         workspace_path: Union[Path, str] = Path("/workspace"),
         namespace: str = "default",
-        volume: Union[dict[str, Any], str, Path, Type[kubernetes.client.models.V1Volume], None] = None,
-        pod_spec: Union[dict[str, Any], str, Path, Type[kubernetes.client.models.V1Pod], None] = None,
+        volume: Union[dict[str, Any], str, Path, Type[V1Volume], None] = None,
+        pod_spec: Union[dict[str, Any], str, Path, Type[V1Pod], None] = None,
         kube_config_file: Union[Path, str, None] = None,
         auto_remove: bool = True,
         functions: Sequence[
@@ -198,7 +198,7 @@ $functions"""
             volume_json = yaml.safe_load(volume.read_text(encoding="utf-8"))
         elif isinstance(volume, str):  # YAML string to dict
             volume_json = yaml.safe_load(volume)
-        elif isinstance(volume, kubernetes.client.models.V1Volume):
+        elif isinstance(volume, V1Volume):
             volume_json = clean_none_value(dict(volume.to_dict()))
         elif isinstance(volume, dict):
             volume_json = volume
@@ -236,7 +236,7 @@ $functions"""
             pod_spec_dict = yaml.safe_load(pod_spec.read_text(encoding="utf-8"))
         elif isinstance(pod_spec, str):  # YAML string to dict
             pod_spec_dict = yaml.safe_load(pod_spec)
-        elif isinstance(pod_spec, kubernetes.client.models.V1Pod):
+        elif isinstance(pod_spec, V1Pod):
             pod_spec_dict = clean_none_value(dict(pod_spec.to_dict()))
         elif isinstance(pod_spec, dict):
             pod_spec_dict = pod_spec
@@ -291,21 +291,21 @@ $functions"""
             raise e from e
 
     def _define_pod_spec(self) -> Any:
-        pod = kubernetes.client.models.V1Pod()
-        metadata = kubernetes.client.models.V1ObjectMeta(name=self._pod_name, namespace=self._namespace)
+        pod = V1Pod()
+        metadata = V1ObjectMeta(name=self._pod_name, namespace=self._namespace)
 
-        executor_container = kubernetes.client.models.V1Container(
+        executor_container = V1Container(
             args=["-c", "while true;do sleep 5; done"],
             command=["/bin/sh"],
             name=self._container_name,
             image=self._image,
         )
-        pod_spec = kubernetes.client.models.V1PodSpec(restart_policy="Never", containers=[executor_container])
+        pod_spec = V1PodSpec(restart_policy="Never", containers=[executor_container])
 
         pod.metadata = metadata
         pod.spec = pod_spec
 
-        pod_manifest: Dict[str, Any] = clean_none_value(dict(pod.to_dict()))
+        pod_manifest: Dict[str, Any] = clean_none_value(dict(pod.to_dict()))  # type: ignore
 
         if self._volume is not None:
             # add volume
@@ -525,9 +525,10 @@ $functions"""
         )
         self._running = False
 
-    async def start(self) -> None:
-        import asyncio_atexit
+    async def stop(self) -> None:
+        await self.remove()
 
+    async def start(self) -> None:
         self._pod = await create_pod(self._kube_config, self._pod)
 
         self._pod = await wait_for_ready(

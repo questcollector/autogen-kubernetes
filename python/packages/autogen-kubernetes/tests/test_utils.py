@@ -10,23 +10,11 @@ from autogen_kubernetes.code_executors._utils import (
     pod_exec_stream,
     wait_for_ready,
 )
-from kubernetes import config
-from kubernetes.client import CoreV1Api
+from conftest import kubernetes_enabled
 from kubernetes.client.models import (
     V1PersistentVolumeClaimVolumeSource,
     V1Volume,
 )
-
-
-def kubernetes_enabled() -> bool:
-    try:
-        config.load_config()  # type: ignore
-        api_client = CoreV1Api()
-        api_client.list_namespace()
-        return True
-    except Exception:
-        return False
-
 
 state_kubernetes_enabled = kubernetes_enabled()
 
@@ -36,7 +24,7 @@ def test_clean_none_value() -> None:
         name="test",
         persistent_volume_claim=V1PersistentVolumeClaimVolumeSource(claim_name="test-pvc", read_only=False),
     )
-    volume_dict = clean_none_value(dict(volume.to_dict()))
+    volume_dict = clean_none_value(dict(volume.to_dict()))  # type: ignore
     assert "aws_elastic_block_store" not in volume_dict
     assert volume_dict["name"] == "test"
     assert volume_dict["persistent_volume_claim"] == {

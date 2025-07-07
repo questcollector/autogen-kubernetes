@@ -19,7 +19,7 @@ def kubernetes_enabled() -> bool:
     try:
         config.load_config()  # type: ignore
         api_client = CoreV1Api()
-        api_client.list_namespace()
+        api_client.list_namespace()  # type: ignore
         return True
     except Exception:
         return False
