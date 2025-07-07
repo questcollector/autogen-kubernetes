@@ -10,13 +10,11 @@ from autogen_kubernetes.code_executors._utils import (
     pod_exec_stream,
     wait_for_ready,
 )
-from conftest import kubernetes_enabled
+from conftest import state_kubernetes_enabled
 from kubernetes.client.models import (
     V1PersistentVolumeClaimVolumeSource,
     V1Volume,
 )
-
-state_kubernetes_enabled = kubernetes_enabled()
 
 
 def test_clean_none_value() -> None:

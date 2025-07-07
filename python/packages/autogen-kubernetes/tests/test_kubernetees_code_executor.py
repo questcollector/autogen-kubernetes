@@ -1,4 +1,3 @@
-import asyncio
 import inspect
 import logging
 import os
@@ -20,13 +19,10 @@ from autogen_core.code_executor import (
     with_requirements,
 )
 from autogen_kubernetes.code_executors import PodCommandLineCodeExecutor
-from conftest import kubernetes_enabled
+from conftest import kubernetes_enabled, state_kubernetes_enabled
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
-
-
-state_kubernetes_enabled = kubernetes_enabled()
 
 
 @pytest.mark.skipif(not state_kubernetes_enabled, reason="kubernetes not accessible")
@@ -266,3 +262,14 @@ print('Hello world!')
         )
         response = await code_executor_agent.on_messages([task], CancellationToken())
         assert "Hello world!" in response.chat_message.to_model_text()
+
+
+@pytest.mark.skipif(not state_kubernetes_enabled, reason="kubernetes not accessible")
+@pytest.mark.asyncio
+async def test_load_component() -> None:
+    executor = PodCommandLineCodeExecutor()
+    dumped_config = executor.dump_component()
+    loaded_executor = PodCommandLineCodeExecutor.load_component(dumped_config)
+
+    assert isinstance(executor, PodCommandLineCodeExecutor)
+    assert executor._pod_name == loaded_executor._pod_name

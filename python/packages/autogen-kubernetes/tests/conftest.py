@@ -25,6 +25,9 @@ def kubernetes_enabled() -> bool:
         return False
 
 
+state_kubernetes_enabled = kubernetes_enabled()
+
+
 @pytest.fixture
 def kubeconfig() -> Any:
     config.load_config()  # type: ignore

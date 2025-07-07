@@ -22,7 +22,7 @@ import asyncio_atexit
 import kubernetes.client
 import kubernetes.config
 import yaml
-from autogen_core import CancellationToken
+from autogen_core import CancellationToken, Component
 from autogen_core.code_executor import (
     CodeBlock,
     CodeExecutor,
@@ -33,6 +33,7 @@ from autogen_core.code_executor._func_with_reqs import (
     build_python_functions_file,
 )
 from kubernetes.client.models import V1Container, V1ObjectMeta, V1Pod, V1PodSpec, V1Volume
+from pydantic import BaseModel
 
 from ._utils import (
     POD_NAME_PATTERN,
@@ -58,7 +59,22 @@ else:
 A = ParamSpec("A")
 
 
-class PodCommandLineCodeExecutor(CodeExecutor):
+class PodCommandLineCodeExecutorConfig(BaseModel):
+    """Configuration for PodCommandLineCodeExecutor"""
+
+    image: str = "python:3-slim"
+    pod_name: Optional[str] = None
+    timeout: int = 60
+    workspace_path: Union[Path, str] = "/workspace"
+    namespace: str = "default"
+    volume: Union[dict[str, Any], str, Path, Type[V1Volume], None] = None
+    pod_spec: Union[dict[str, Any], str, Path, Type[V1Pod], None] = None
+    kube_config_file: Union[Path, str, None] = None
+    auto_remove: bool = True
+    functions_module: str = "functions"
+
+
+class PodCommandLineCodeExecutor(CodeExecutor, Component[PodCommandLineCodeExecutorConfig]):
     """Executes code through a command line environment in a container on Kubernetes Pod.
 
     The executor first saves each code block in a file in the working
@@ -113,6 +129,9 @@ class PodCommandLineCodeExecutor(CodeExecutor):
         functions (List[Union[FunctionWithRequirements[Any, A], Callable[..., Any]]]): A list of functions that are available to the code executor. Default is an empty list.
         functions_module (str, optional): The name of the module that will be created to store the functions. Defaults to "functions".
     """
+
+    component_config_schema = PodCommandLineCodeExecutorConfig
+    component_provider_override = "autogen_kubernetes.code_executors.PodCommandLineCodeExecutor"
 
     SUPPORTED_LANGUAGES: ClassVar[List[str]] = [
         "bash",
@@ -175,6 +194,7 @@ $functions"""
         else:
             kubernetes.config.load_config(config_file=kube_config_file)  # type: ignore
         self._kube_config = kubernetes.client.Configuration.get_default_copy()  # type: ignore
+        self._kube_config_file = kube_config_file
 
         ## workspace
         if isinstance(workspace_path, str):  ## path string to Path
@@ -575,3 +595,39 @@ $functions"""
     ) -> Optional[bool]:
         await self.remove()
         return None
+
+    def _to_config(self) -> PodCommandLineCodeExecutorConfig:
+        """(Experimental) Convert the component to a config object"""
+        if self._functions:
+            logging.info("Functions will not be included in serialized configuration")
+
+        return PodCommandLineCodeExecutorConfig(
+            image=self._image,
+            pod_name=self._pod_name,
+            timeout=self._timeout,
+            workspace_path=self._workspace_path,
+            namespace=self._namespace,
+            volume=self._volume,
+            pod_spec=self._pod,
+            kube_config_file=self._kube_config_file,
+            auto_remove=self._auto_remove,
+            functions_module=self._functions_module,
+        )
+
+    @classmethod
+    def _from_config(cls, config: PodCommandLineCodeExecutorConfig) -> Self:
+        """(Experimental) Create a component from a config object"""
+
+        return cls(
+            image=config.image,
+            pod_name=config.pod_name,
+            timeout=config.timeout,
+            workspace_path=config.workspace_path,
+            namespace=config.namespace,
+            volume=config.volume,
+            pod_spec=config.pod_spec,
+            kube_config_file=config.kube_config_file,
+            auto_remove=config.auto_remove,
+            functions_module=config.functions_module,
+            functions=[],
+        )

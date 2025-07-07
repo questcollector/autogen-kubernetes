@@ -1,5 +1,3 @@
-from ._kubernetes_code_executor import PodCommandLineCodeExecutor
+from ._kubernetes_code_executor import PodCommandLineCodeExecutor, PodCommandLineCodeExecutorConfig
 
-__all__ = [
-    "PodCommandLineCodeExecutor",
-]
+__all__ = ["PodCommandLineCodeExecutor", "PodCommandLineCodeExecutorConfig"]
