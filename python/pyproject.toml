@@ -3,6 +3,7 @@ members = ["packages/*"]
 
 [tool.uv]
 dev-dependencies = [
+    "pyright==1.1.389",
     "mypy==1.13.0",
     "ruff==0.4.8",
     "pytest",
@@ -14,7 +15,7 @@ dev-dependencies = [
     "pytest_mock",
     "poethepoet",
     "packaging",
-    "grpcio-tools~=1.62.0",
+    "grpcio-tools~=1.70.0",
     "mypy-protobuf",
     "cookiecutter",
     "poethepoet",
@@ -58,11 +59,19 @@ disallow_incomplete_defs = true
 disallow_untyped_decorators = true
 disallow_any_unimported = true
 
+[tool.pyright]
+include = ["src", "tests", "samples"]
+exclude = ["samples/core_xlang_hello_python_agent/protos"]
+typeCheckingMode = "strict"
+reportUnnecessaryIsInstance = false
+reportMissingTypeStubs = false
+
 [tool.poe.tasks]
 fmt = "python run_task_in_pkgs_if_exist.py fmt"
 format.ref = "fmt"
 lint = "python run_task_in_pkgs_if_exist.py lint"
 mypy = "python run_task_in_pkgs_if_exist.py mypy"
+pyright = "python run_task_in_pkgs_if_exist.py pyright"
 test = "python run_task_in_pkgs_if_exist.py test"
 
-check = ["fmt", "lint", "mypy", "test"]
+check = ["fmt", "lint", "mypy", "pyright", "test"]

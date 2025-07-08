@@ -12,32 +12,18 @@ import pytest
 from autogen_agentchat.agents import CodeExecutorAgent
 from autogen_agentchat.messages import TextMessage
 from autogen_core import CancellationToken
-from autogen_core.code_executor import CodeBlock
-from autogen_kubernetes.code_executors import PodCommandLineCodeExecutor
-from autogen_kubernetes.code_executors._utils import (
+from autogen_core.code_executor import (
     Alias,
+    CodeBlock,
     FunctionWithRequirements,
     ImportFromModule,
     with_requirements,
 )
-from kubernetes.client import CoreV1Api
-from kubernetes.config import load_config  # type: ignore
+from autogen_kubernetes.code_executors import PodCommandLineCodeExecutor
+from conftest import kubernetes_enabled, state_kubernetes_enabled
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
-
-
-def kubernetes_enabled() -> bool:
-    try:
-        load_config()  # type: ignore
-        api_client = CoreV1Api()
-        api_client.list_namespace()
-        return True
-    except Exception:
-        return False
-
-
-state_kubernetes_enabled = kubernetes_enabled()
 
 
 @pytest.mark.skipif(not state_kubernetes_enabled, reason="kubernetes not accessible")
@@ -232,13 +218,7 @@ async def test_func_modules(generated_pod_name_regex: str) -> None:
         assert "Hello, World!" in code_result.output
 
 
-@with_requirements(
-    python_packages=["httpx"],
-    global_imports=[
-        Alias(name="httpx", alias="hx"),
-        ImportFromModule(module="typing", imports=("Any",)),
-    ],
-)
+@with_requirements(python_packages=["httpx"], global_imports=[Alias(name="httpx", alias="hx"), ImportFromModule(module="typing", imports=("Any",)),],)  # fmt: skip
 def load_data() -> Any:
     """
     fetch cat fact api
@@ -282,4 +262,39 @@ print('Hello world!')
             source="user",
         )
         response = await code_executor_agent.on_messages([task], CancellationToken())
-        assert "Hello world!" in response.chat_message.content
+        assert "Hello world!" in response.chat_message.to_model_text()
+
+
+@pytest.mark.skipif(not state_kubernetes_enabled, reason="kubernetes not accessible")
+@pytest.mark.asyncio
+async def test_load_component() -> None:
+    executor = PodCommandLineCodeExecutor()
+    dumped_config = executor.dump_component()
+    loaded_executor = PodCommandLineCodeExecutor.load_component(dumped_config)
+
+    assert isinstance(executor, PodCommandLineCodeExecutor)
+    assert executor._pod_name == loaded_executor._pod_name
+
+
+@pytest.mark.skipif(not state_kubernetes_enabled, reason="kubernetes not accessible")
+@pytest.mark.asyncio
+async def test_pod_exec_cancellation(generated_pod_name_regex: str) -> None:
+    cancellation_token = CancellationToken()
+    async with PodCommandLineCodeExecutor() as executor:
+        coro = executor.execute_code_blocks(
+            code_blocks=[
+                CodeBlock(
+                    language="python",
+                    code="""import time
+time.sleep(10)
+print('Hello, World!')""",
+                ),
+            ],
+            cancellation_token=cancellation_token,
+        )
+        await asyncio.sleep(5)
+        cancellation_token.cancel()
+        code_result = await coro
+
+        assert re.fullmatch(generated_pod_name_regex, executor._pod_name) is not None
+        assert code_result.exit_code == 1 and "cancelled" in code_result.output

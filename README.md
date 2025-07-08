@@ -461,7 +461,7 @@ https://docs.astral.sh/uv/getting-started/installation/
 
 ```sh
 cd autogen-kubernetes/python
-uv venv --python python >=3.10
+uv venv --python ">=3.10"
 source .venv/bin/activate
 uv sync --locked --all-extras
 ```

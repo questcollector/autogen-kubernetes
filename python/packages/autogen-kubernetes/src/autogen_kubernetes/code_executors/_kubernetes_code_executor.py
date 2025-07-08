@@ -11,32 +11,36 @@ import logging
 import re
 import shlex
 import sys
-import time
 import uuid
 import warnings
-from collections.abc import Coroutine, Sequence
+from collections.abc import Sequence
 from hashlib import sha256
 from pathlib import Path
 from types import TracebackType
-from typing import Any, Callable, ClassVar, Dict, List, Optional, ParamSpec, Type, Union
+from typing import Any, Callable, ClassVar, Dict, List, Optional, ParamSpec, Tuple, Type, Union
 
+import asyncio_atexit
 import kubernetes.client
 import kubernetes.config
 import yaml
-from autogen_core import CancellationToken
+from autogen_core import CancellationToken, Component
 from autogen_core.code_executor import (
     CodeBlock,
     CodeExecutor,
+    FunctionWithRequirements,
+    FunctionWithRequirementsStr,
+)
+from autogen_core.code_executor._func_with_reqs import (
+    build_python_functions_file,
 )
 from httpx import HTTPStatusError
+from kubernetes.client.models import V1Container, V1ObjectMeta, V1Pod, V1PodSpec, V1Volume
+from pydantic import BaseModel
 
 from ._utils import (
     POD_NAME_PATTERN,
     CommandLineCodeResult,
-    FunctionWithRequirements,
-    FunctionWithRequirementsStr,
     StreamChannel,
-    build_python_functions_file,
     clean_none_value,
     create_pod,
     delete_pod,
@@ -57,8 +61,22 @@ else:
 A = ParamSpec("A")
 
 
-# TODO autogen compatibility
-class PodCommandLineCodeExecutor(CodeExecutor):
+class PodCommandLineCodeExecutorConfig(BaseModel):
+    """Configuration for PodCommandLineCodeExecutor"""
+
+    image: str = "python:3-slim"
+    pod_name: Optional[str] = None
+    timeout: int = 60
+    workspace_path: Union[Path, str] = "/workspace"
+    namespace: str = "default"
+    volume: Union[dict[str, Any], str, Path, Type[V1Volume], None] = None
+    pod_spec: Union[dict[str, Any], str, Path, Type[V1Pod], None] = None
+    kube_config_file: Union[Path, str, None] = None
+    auto_remove: bool = True
+    functions_module: str = "functions"
+
+
+class PodCommandLineCodeExecutor(CodeExecutor, Component[PodCommandLineCodeExecutorConfig]):
     """Executes code through a command line environment in a container on Kubernetes Pod.
 
     The executor first saves each code block in a file in the working
@@ -114,6 +132,9 @@ class PodCommandLineCodeExecutor(CodeExecutor):
         functions_module (str, optional): The name of the module that will be created to store the functions. Defaults to "functions".
     """
 
+    component_config_schema = PodCommandLineCodeExecutorConfig
+    component_provider_override = "autogen_kubernetes.code_executors.PodCommandLineCodeExecutor"
+
     SUPPORTED_LANGUAGES: ClassVar[List[str]] = [
         "bash",
         "shell",
@@ -150,8 +171,8 @@ $functions"""
         timeout: int = 60,
         workspace_path: Union[Path, str] = Path("/workspace"),
         namespace: str = "default",
-        volume: Union[dict[str, Any], str, Path, Type[kubernetes.client.models.V1Volume], None] = None,
-        pod_spec: Union[dict[str, Any], str, Path, Type[kubernetes.client.models.V1Pod], None] = None,
+        volume: Union[dict[str, Any], str, Path, Type[V1Volume], None] = None,
+        pod_spec: Union[dict[str, Any], str, Path, Type[V1Pod], None] = None,
         kube_config_file: Union[Path, str, None] = None,
         auto_remove: bool = True,
         functions: Sequence[
@@ -175,6 +196,7 @@ $functions"""
         else:
             kubernetes.config.load_config(config_file=kube_config_file)  # type: ignore
         self._kube_config = kubernetes.client.Configuration.get_default_copy()  # type: ignore
+        self._kube_config_file = kube_config_file
 
         ## workspace
         if isinstance(workspace_path, str):  ## path string to Path
@@ -198,7 +220,7 @@ $functions"""
             volume_json = yaml.safe_load(volume.read_text(encoding="utf-8"))
         elif isinstance(volume, str):  # YAML string to dict
             volume_json = yaml.safe_load(volume)
-        elif isinstance(volume, kubernetes.client.models.V1Volume):
+        elif isinstance(volume, V1Volume):
             volume_json = clean_none_value(dict(volume.to_dict()))
         elif isinstance(volume, dict):
             volume_json = volume
@@ -236,7 +258,7 @@ $functions"""
             pod_spec_dict = yaml.safe_load(pod_spec.read_text(encoding="utf-8"))
         elif isinstance(pod_spec, str):  # YAML string to dict
             pod_spec_dict = yaml.safe_load(pod_spec)
-        elif isinstance(pod_spec, kubernetes.client.models.V1Pod):
+        elif isinstance(pod_spec, V1Pod):
             pod_spec_dict = clean_none_value(dict(pod_spec.to_dict()))
         elif isinstance(pod_spec, dict):
             pod_spec_dict = pod_spec
@@ -291,21 +313,21 @@ $functions"""
             raise e from e
 
     def _define_pod_spec(self) -> Any:
-        pod = kubernetes.client.models.V1Pod()
-        metadata = kubernetes.client.models.V1ObjectMeta(name=self._pod_name, namespace=self._namespace)
+        pod = V1Pod()
+        metadata = V1ObjectMeta(name=self._pod_name, namespace=self._namespace)
 
-        executor_container = kubernetes.client.models.V1Container(
+        executor_container = V1Container(
             args=["-c", "while true;do sleep 5; done"],
             command=["/bin/sh"],
             name=self._container_name,
             image=self._image,
         )
-        pod_spec = kubernetes.client.models.V1PodSpec(restart_policy="Never", containers=[executor_container])
+        pod_spec = V1PodSpec(restart_policy="Never", containers=[executor_container])
 
         pod.metadata = metadata
         pod.spec = pod_spec
 
-        pod_manifest: Dict[str, Any] = clean_none_value(dict(pod.to_dict()))
+        pod_manifest: Dict[str, Any] = clean_none_value(dict(pod.to_dict()))  # type: ignore
 
         if self._volume is not None:
             # add volume
@@ -410,6 +432,33 @@ $functions"""
 
         self._setup_functions_complete = True
 
+    async def _execute_command(self, command: List[str]) -> Tuple[List[str], int]:
+        stderr_msg: List[str] = []
+        stdout_msg: List[str] = []
+        outputs: List[str] = []
+        last_exit_code = 0
+        async for channel, msg, exit_code in pod_exec_stream(
+            self._kube_config,
+            self._pod["metadata"]["name"],
+            self._pod["metadata"]["namespace"],
+            command,
+            self._container_name,
+        ):
+            if channel == StreamChannel.STDOUT_CHANNEL:
+                stdout_msg.append(msg)
+            elif channel == StreamChannel.STDERR_CHANNEL:
+                stderr_msg.append(msg)
+            if exit_code is not None:
+                last_exit_code = exit_code
+
+        if last_exit_code == 124:
+            stdout_msg.append("\n Timeout")
+
+        outputs.extend(stdout_msg)
+        outputs.extend(stderr_msg)
+
+        return outputs, last_exit_code
+
     async def _execute_code_dont_check_setup(
         self, code_blocks: List[CodeBlock], cancellation_token: CancellationToken
     ) -> CommandLineCodeResult:  # type: ignore
@@ -445,53 +494,31 @@ $functions"""
             )
 
             code_write_command = ["sh", "-c", mkdir_and_write_code]
-            stderr_msg: List[str] = []
-            stdout_msg: List[str] = []
-            last_exit_code = 0
-            async for channel, msg, exit_code in pod_exec_stream(
-                self._kube_config,
-                self._pod["metadata"]["name"],
-                self._pod["metadata"]["namespace"],
-                code_write_command,
-                self._container_name,
-            ):
-                if channel == StreamChannel.STDOUT_CHANNEL:
-                    stdout_msg.append(msg)
-                elif channel == StreamChannel.STDERR_CHANNEL:
-                    stderr_msg.append(msg)
-                if exit_code is not None:
-                    last_exit_code = exit_code
+            code_write_exec = asyncio.create_task(self._execute_command(code_write_command))
+            cancellation_token.link_future(code_write_exec)
 
-            outputs.extend(stderr_msg)
-            if last_exit_code != 0:
-                break
+            try:
+                std_outputs, exit_code = await code_write_exec
+                outputs.extend(std_outputs)
+                last_exit_code = exit_code
+                if last_exit_code != 0:
+                    break
+            except asyncio.CancelledError:
+                return CommandLineCodeResult(exit_code=1, output="Code execution was cancelled.", code_file=None)
 
             files.append(code_path)
             command = ["timeout", str(self.timeout), lang_to_cmd(lang), str(code_path)]
+            command_exec = asyncio.create_task(self._execute_command(command))
+            cancellation_token.link_future(command_exec)
 
-            stderr_msg = []
-            stdout_msg = []
-            async for channel, msg, exit_code in pod_exec_stream(
-                self._kube_config,
-                self._pod["metadata"]["name"],
-                self._pod["metadata"]["namespace"],
-                command,
-                self._container_name,
-            ):
-                if channel == StreamChannel.STDOUT_CHANNEL:
-                    stdout_msg.append(msg)
-                elif channel == StreamChannel.STDERR_CHANNEL:
-                    stderr_msg.append(msg)
-                if exit_code is not None:
-                    last_exit_code = exit_code
-
-            if last_exit_code == 124:
-                stdout_msg.append("\n Timeout")
-            outputs.extend(stdout_msg)
-            outputs.extend(stderr_msg)
-
-            if last_exit_code != 0:
-                break
+            try:
+                std_outputs, exit_code = await command_exec
+                outputs.extend(std_outputs)
+                last_exit_code = exit_code
+                if last_exit_code != 0:
+                    break
+            except asyncio.CancelledError:
+                return CommandLineCodeResult(exit_code=1, output="Code execution was cancelled.", code_file=None)
 
         code_file = str(files[0]) if files else None
         return CommandLineCodeResult(exit_code=last_exit_code, output="".join(outputs), code_file=code_file)
@@ -507,27 +534,27 @@ $functions"""
         Returns:
             CommandlineCodeResult: The result of the code execution."""
 
-        def raise_not_implemented() -> None:
-            raise NotImplementedError("Cancellation is not yet supported for PodCommandLineCodeExecutor")
-
-        cancellation_token.add_callback(lambda: raise_not_implemented())
-
         if not self._setup_functions_complete:
             await self._setup_functions(cancellation_token)
 
         return await self._execute_code_dont_check_setup(code_blocks, cancellation_token)
 
     async def remove(self) -> None:
-        await delete_pod(
-            self._kube_config,
-            self._pod["metadata"]["name"],
-            self._pod["metadata"]["namespace"],
-        )
-        self._running = False
+        try:
+            await delete_pod(
+                self._kube_config,
+                self._pod["metadata"]["name"],
+                self._pod["metadata"]["namespace"],
+            )
+        except HTTPStatusError:
+            pass
+        finally:
+            self._running = False
+
+    async def stop(self) -> None:
+        await self.remove()
 
     async def start(self) -> None:
-        import asyncio_atexit
-
         self._pod = await create_pod(self._kube_config, self._pod)
 
         self._pod = await wait_for_ready(
@@ -574,3 +601,39 @@ $functions"""
     ) -> Optional[bool]:
         await self.remove()
         return None
+
+    def _to_config(self) -> PodCommandLineCodeExecutorConfig:
+        """(Experimental) Convert the component to a config object"""
+        if self._functions:
+            logging.info("Functions will not be included in serialized configuration")
+
+        return PodCommandLineCodeExecutorConfig(
+            image=self._image,
+            pod_name=self._pod_name,
+            timeout=self._timeout,
+            workspace_path=self._workspace_path,
+            namespace=self._namespace,
+            volume=self._volume,
+            pod_spec=self._pod,
+            kube_config_file=self._kube_config_file,
+            auto_remove=self._auto_remove,
+            functions_module=self._functions_module,
+        )
+
+    @classmethod
+    def _from_config(cls, config: PodCommandLineCodeExecutorConfig) -> Self:
+        """(Experimental) Create a component from a config object"""
+
+        return cls(
+            image=config.image,
+            pod_name=config.pod_name,
+            timeout=config.timeout,
+            workspace_path=config.workspace_path,
+            namespace=config.namespace,
+            volume=config.volume,
+            pod_spec=config.pod_spec,
+            kube_config_file=config.kube_config_file,
+            auto_remove=config.auto_remove,
+            functions_module=config.functions_module,
+            functions=[],
+        )
