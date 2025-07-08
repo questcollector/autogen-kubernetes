@@ -161,6 +161,13 @@ async def pod_exec_stream(
 
         except ConnectionClosed as e:
             logging.info(f"Websocket connection closed: {e}")
+        except asyncio.CancelledError:
+            payload = json.dumps({"signal": "SIGKILL"}).encode("utf-8")
+            frame = b"\x03" + payload
+            await ws.send(frame)
+
+            logging.info("send SIGKILL")
+            raise
 
 
 async def _read_pod_status(kube_config: Any, pod_name: str, namespace: str) -> Any:

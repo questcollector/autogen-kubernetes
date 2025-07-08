@@ -1,3 +1,4 @@
+import asyncio
 import inspect
 import logging
 import os
@@ -273,3 +274,27 @@ async def test_load_component() -> None:
 
     assert isinstance(executor, PodCommandLineCodeExecutor)
     assert executor._pod_name == loaded_executor._pod_name
+
+
+@pytest.mark.skipif(not state_kubernetes_enabled, reason="kubernetes not accessible")
+@pytest.mark.asyncio
+async def test_pod_exec_cancellation(generated_pod_name_regex: str) -> None:
+    cancellation_token = CancellationToken()
+    async with PodCommandLineCodeExecutor() as executor:
+        coro = executor.execute_code_blocks(
+            code_blocks=[
+                CodeBlock(
+                    language="python",
+                    code="""import time
+time.sleep(10)
+print('Hello, World!')""",
+                ),
+            ],
+            cancellation_token=cancellation_token,
+        )
+        await asyncio.sleep(5)
+        cancellation_token.cancel()
+        code_result = await coro
+
+        assert re.fullmatch(generated_pod_name_regex, executor._pod_name) is not None
+        assert code_result.exit_code == 1 and "cancelled" in code_result.output

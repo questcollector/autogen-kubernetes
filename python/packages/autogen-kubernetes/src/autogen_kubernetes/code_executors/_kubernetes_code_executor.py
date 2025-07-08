@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 import shlex
@@ -16,7 +17,7 @@ from collections.abc import Sequence
 from hashlib import sha256
 from pathlib import Path
 from types import TracebackType
-from typing import Any, Callable, ClassVar, Dict, List, Optional, ParamSpec, Type, Union
+from typing import Any, Callable, ClassVar, Dict, List, Optional, ParamSpec, Tuple, Type, Union
 
 import asyncio_atexit
 import kubernetes.client
@@ -32,6 +33,7 @@ from autogen_core.code_executor import (
 from autogen_core.code_executor._func_with_reqs import (
     build_python_functions_file,
 )
+from httpx import HTTPStatusError
 from kubernetes.client.models import V1Container, V1ObjectMeta, V1Pod, V1PodSpec, V1Volume
 from pydantic import BaseModel
 
@@ -430,6 +432,33 @@ $functions"""
 
         self._setup_functions_complete = True
 
+    async def _execute_command(self, command: List[str]) -> Tuple[List[str], int]:
+        stderr_msg: List[str] = []
+        stdout_msg: List[str] = []
+        outputs: List[str] = []
+        last_exit_code = 0
+        async for channel, msg, exit_code in pod_exec_stream(
+            self._kube_config,
+            self._pod["metadata"]["name"],
+            self._pod["metadata"]["namespace"],
+            command,
+            self._container_name,
+        ):
+            if channel == StreamChannel.STDOUT_CHANNEL:
+                stdout_msg.append(msg)
+            elif channel == StreamChannel.STDERR_CHANNEL:
+                stderr_msg.append(msg)
+            if exit_code is not None:
+                last_exit_code = exit_code
+
+        if last_exit_code == 124:
+            stdout_msg.append("\n Timeout")
+
+        outputs.extend(stdout_msg)
+        outputs.extend(stderr_msg)
+
+        return outputs, last_exit_code
+
     async def _execute_code_dont_check_setup(
         self, code_blocks: List[CodeBlock], cancellation_token: CancellationToken
     ) -> CommandLineCodeResult:  # type: ignore
@@ -465,53 +494,31 @@ $functions"""
             )
 
             code_write_command = ["sh", "-c", mkdir_and_write_code]
-            stderr_msg: List[str] = []
-            stdout_msg: List[str] = []
-            last_exit_code = 0
-            async for channel, msg, exit_code in pod_exec_stream(
-                self._kube_config,
-                self._pod["metadata"]["name"],
-                self._pod["metadata"]["namespace"],
-                code_write_command,
-                self._container_name,
-            ):
-                if channel == StreamChannel.STDOUT_CHANNEL:
-                    stdout_msg.append(msg)
-                elif channel == StreamChannel.STDERR_CHANNEL:
-                    stderr_msg.append(msg)
-                if exit_code is not None:
-                    last_exit_code = exit_code
+            code_write_exec = asyncio.create_task(self._execute_command(code_write_command))
+            cancellation_token.link_future(code_write_exec)
 
-            outputs.extend(stderr_msg)
-            if last_exit_code != 0:
-                break
+            try:
+                std_outputs, exit_code = await code_write_exec
+                outputs.extend(std_outputs)
+                last_exit_code = exit_code
+                if last_exit_code != 0:
+                    break
+            except asyncio.CancelledError:
+                return CommandLineCodeResult(exit_code=1, output="Code execution was cancelled.", code_file=None)
 
             files.append(code_path)
             command = ["timeout", str(self.timeout), lang_to_cmd(lang), str(code_path)]
+            command_exec = asyncio.create_task(self._execute_command(command))
+            cancellation_token.link_future(command_exec)
 
-            stderr_msg = []
-            stdout_msg = []
-            async for channel, msg, exit_code in pod_exec_stream(
-                self._kube_config,
-                self._pod["metadata"]["name"],
-                self._pod["metadata"]["namespace"],
-                command,
-                self._container_name,
-            ):
-                if channel == StreamChannel.STDOUT_CHANNEL:
-                    stdout_msg.append(msg)
-                elif channel == StreamChannel.STDERR_CHANNEL:
-                    stderr_msg.append(msg)
-                if exit_code is not None:
-                    last_exit_code = exit_code
-
-            if last_exit_code == 124:
-                stdout_msg.append("\n Timeout")
-            outputs.extend(stdout_msg)
-            outputs.extend(stderr_msg)
-
-            if last_exit_code != 0:
-                break
+            try:
+                std_outputs, exit_code = await command_exec
+                outputs.extend(std_outputs)
+                last_exit_code = exit_code
+                if last_exit_code != 0:
+                    break
+            except asyncio.CancelledError:
+                return CommandLineCodeResult(exit_code=1, output="Code execution was cancelled.", code_file=None)
 
         code_file = str(files[0]) if files else None
         return CommandLineCodeResult(exit_code=last_exit_code, output="".join(outputs), code_file=code_file)
@@ -527,23 +534,22 @@ $functions"""
         Returns:
             CommandlineCodeResult: The result of the code execution."""
 
-        def raise_not_implemented() -> None:
-            raise NotImplementedError("Cancellation is not yet supported for PodCommandLineCodeExecutor")
-
-        cancellation_token.add_callback(lambda: raise_not_implemented())
-
         if not self._setup_functions_complete:
             await self._setup_functions(cancellation_token)
 
         return await self._execute_code_dont_check_setup(code_blocks, cancellation_token)
 
     async def remove(self) -> None:
-        await delete_pod(
-            self._kube_config,
-            self._pod["metadata"]["name"],
-            self._pod["metadata"]["namespace"],
-        )
-        self._running = False
+        try:
+            await delete_pod(
+                self._kube_config,
+                self._pod["metadata"]["name"],
+                self._pod["metadata"]["namespace"],
+            )
+        except HTTPStatusError:
+            pass
+        finally:
+            self._running = False
 
     async def stop(self) -> None:
         await self.remove()
