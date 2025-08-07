@@ -37,7 +37,7 @@ jobs:
           python-version: "3.11"
       - name: Run uv sync
         run: |
-          uv sync --locked --all-extras
+          uv sync --all-extras
         working-directory: ./python
       - name: format check
         run: |
