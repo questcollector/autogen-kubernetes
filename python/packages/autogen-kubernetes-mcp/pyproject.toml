@@ -1,0 +1,19 @@
+[project]
+name = "autogen-kubernetes-mcp"
+version = "0.5.1"
+description = "MPC server provides code interpreter with kubernetes workload"
+readme = "README.md"
+requires-python = ">=3.10"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "autogen-kubernetes>=0.5.1",
+    "mcp>=1.0.0",
+    "openai-harmony",
+]
+
+[project.scripts]
+autogen-kubernetes-mcp = "autogen_kubernetes_mcp.server:main"
