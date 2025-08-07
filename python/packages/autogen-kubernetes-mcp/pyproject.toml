@@ -3,11 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "autogen-kubernetes"
+name = "autogen-kubernetes-mcp"
 version = "0.5.1"
-license = {file = "LICENSE-CODE"}
-description = "autogen kubernetes extension"
-keywords = ["autogen", "agent", "AI", "kubernetes"]
+description = "MPC server provides code interpreter with kubernetes workload"
 readme = "README.md"
 requires-python = ">=3.10"
 classifiers = [
@@ -16,23 +14,15 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 dependencies = [
-    "autogen-core>=0.5.1",
-    "httpx",
-    "kubernetes>=27.0.0",
-    "websockets",
-    "PyYAML",
-    "asyncio_atexit>=1.0.1"
+    "autogen-kubernetes>=0.5.1",
+    "mcp>=1.12.2",
 ]
 
-[tool.uv]
-dev-dependencies = [
-    "autogen-agentchat>=0.5.1",
-    "types-pyyaml",
-    "kubernetes-stubs"
-]
+[project.scripts]
+autogen-kubernetes-mcp = "autogen_kubernetes_mcp.server:main"
 
 [tool.hatch.build.target.wheel]
-packages = ["src/autogen_kubernetes"]
+packages = ["src/autogen_kubernetes_mcp"]
 
 [tool.ruff]
 extend = "../../pyproject.toml"

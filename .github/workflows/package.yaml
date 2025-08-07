@@ -2,6 +2,14 @@ name: Deploy package
 
 on:
   workflow_dispatch:
+    inputs:
+      package:
+        description: "Select the package to deploy"
+        required: true
+        type: choice
+        options:
+          - autogen-kubernetes
+          - autogen-kubernetes-mcp
   push:
     tags:
     - "v*"
@@ -21,7 +29,7 @@ jobs:
         name: Setup uv
         with:
           enable-cache: true
-      - run: uv build --package autogen-kubernetes --out-dir dist/
+      - run: uv build --package ${{ github.event.inputs.package }} --out-dir dist/
         name: Build package
         working-directory: python
       - name: Publish package to PyPI
