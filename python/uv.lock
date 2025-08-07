@@ -150,18 +150,16 @@ dev = [
 [[package]]
 name = "autogen-kubernetes-mcp"
 version = "0.5.1"
-source = { virtual = "packages/autogen-kubernetes-mcp" }
+source = { editable = "packages/autogen-kubernetes-mcp" }
 dependencies = [
     { name = "autogen-kubernetes" },
     { name = "mcp" },
-    { name = "openai-harmony" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "autogen-kubernetes", editable = "packages/autogen-kubernetes" },
     { name = "mcp", specifier = ">=1.12.2" },
-    { name = "openai-harmony" },
 ]
 
 [[package]]
@@ -778,29 +776,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/6d/fa/fbf4001037904031639e6bfbfc02badfc7e12f137a8afa254df6c4c8a670/oauthlib-3.2.2.tar.gz", hash = "sha256:9859c40929662bec5d64f34d01c99e093149682a3f38915dc0655d5a633dd918", size = 177352 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/7e/80/cab10959dc1faead58dc8384a781dfbf93cb4d33d50988f7a69f1b7c9bbe/oauthlib-3.2.2-py3-none-any.whl", hash = "sha256:8139f29aac13e25d502680e9e19963e83f16838d48a0d71c287fe40e7067fbca", size = 151688 },
-]
-
-[[package]]
-name = "openai-harmony"
-version = "0.0.3"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "pydantic" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/52/4e/045d1bc5c0a656854e9e3cf275817899e4e17d6bd7a75006705910c149aa/openai_harmony-0.0.3.tar.gz", hash = "sha256:719c7a8eaec57bb2072ac0a2af74f6fd36e36c1089f43161d36d8ede15c1ed5a", size = 279472 }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/2b/22/23a09aa8748b18dd59e72c244cbdee0e97d71d8edd5775d7f76b0a9d9589/openai_harmony-0.0.3-cp38-abi3-macosx_10_12_x86_64.whl", hash = "sha256:681f46003a7754daa12b6f87b4596d0c81edf34f77807d59f476914dbc53d1ea", size = 2772732 },
-    { url = "https://files.pythonhosted.org/packages/3d/f0/513d3d6e2f87364cdc766040d8ffbffabe2195c72fb5f3c8a191dc64220e/openai_harmony-0.0.3-cp38-abi3-macosx_11_0_arm64.whl", hash = "sha256:a5de28ac42fb29264058712624c5e845f230f7cd1c74f64751e3247e5fda9a3b", size = 2632836 },
-    { url = "https://files.pythonhosted.org/packages/44/de/5f525ca3f528a6538cf3aac0b8c9635ffa4fe1941a4dbd4d9a493d6900c6/openai_harmony-0.0.3-cp38-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:45af29a3164ef561ac0e554efa9cfc62b1d0c1cd91c02b2cb5e938dc6759196d", size = 2949274 },
-    { url = "https://files.pythonhosted.org/packages/92/72/4781ce5ce4c8fefed38a953735ae583a962fc078a62dd3e3861d484c4cca/openai_harmony-0.0.3-cp38-abi3-manylinux_2_17_armv7l.manylinux2014_armv7l.whl", hash = "sha256:43c1b8a2b258c05aa670faf8a1e2a5526afc1d677275299e700adf657bd3403b", size = 2736868 },
-    { url = "https://files.pythonhosted.org/packages/47/d9/397328c5f948bc22c73b5e27129d276d1857cd10baeedbb33aa7dfcffc4a/openai_harmony-0.0.3-cp38-abi3-manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:339df63fd2985f21451774010adeed107f3ff8b60d6ac20423af1c3b816e6256", size = 2973751 },
-    { url = "https://files.pythonhosted.org/packages/20/54/0354d74cdaedc67fe59bd091c30ef5a63768354c439af3bc6eb7a5bfabcb/openai_harmony-0.0.3-cp38-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:fb22daae1fe1db02023d77076aa8a3ccbd5832621db66df3b798c6c1194d3747", size = 3045729 },
-    { url = "https://files.pythonhosted.org/packages/f0/af/f1feabd84e1013c035bf8866a5233536032a56e42c00e627c9e729aa63cb/openai_harmony-0.0.3-cp38-abi3-musllinux_1_2_aarch64.whl", hash = "sha256:c6bc5080058ac6e37c76b35b1bae7d33e609953dca19060efbed24b63b1d23ed", size = 3109808 },
-    { url = "https://files.pythonhosted.org/packages/20/fa/b9dbad449ce8aae6a138f401469030aebeade19b74407d4418bf9cd56e8b/openai_harmony-0.0.3-cp38-abi3-musllinux_1_2_armv7l.whl", hash = "sha256:16ba19c4b148cb8b3076f32b159c95b093dbbc7af5ee3688dcdc85a910a751f1", size = 2959049 },
-    { url = "https://files.pythonhosted.org/packages/ec/2d/f0cde9711420e0f47d6601a18271f22b54962029b105d647f834dc72397d/openai_harmony-0.0.3-cp38-abi3-musllinux_1_2_i686.whl", hash = "sha256:db9ba9762dff2079bbee029a72c155395ac27bd59ef424e1867f37394d7b0318", size = 3004498 },
-    { url = "https://files.pythonhosted.org/packages/6f/4c/2fccccbd1c80644c1abe4ecbeb508bd363fb70960461f48c3cd06c3c4890/openai_harmony-0.0.3-cp38-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:68da33a6b69b390541aadcbd638372c82a0a80841bd2c38831526cd5d2ed3f85", size = 3216040 },
-    { url = "https://files.pythonhosted.org/packages/76/81/8f9e3ac1972e6bb0bc1682debab9e8ccb6eb37ac969d4fdc933487c35213/openai_harmony-0.0.3-cp38-abi3-win32.whl", hash = "sha256:3e011a183de11d0a6f579a6e6285ffa197d45e9f3d040f59aa45fee86f3c33c6", size = 2076593 },
-    { url = "https://files.pythonhosted.org/packages/d0/2f/85916c8e8d6ad2dfddacd2b89e55382fa2388bba13411c1135b0ba896f4a/openai_harmony-0.0.3-cp38-abi3-win_amd64.whl", hash = "sha256:ea6ca6f22ff2f760f815a7fe85bc2bf082a9a145986b37939dad47f871a0a0d7", size = 2444592 },
 ]
 
 [[package]]

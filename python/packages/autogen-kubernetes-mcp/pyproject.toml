@@ -16,7 +16,6 @@ classifiers = [
 dependencies = [
     "autogen-kubernetes>=0.5.1",
     "mcp>=1.12.2",
-    "openai-harmony",
 ]
 
 [project.scripts]
