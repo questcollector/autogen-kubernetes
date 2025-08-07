@@ -1,3 +1,7 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
 name = "autogen-kubernetes-mcp"
 version = "0.5.1"
@@ -17,6 +21,9 @@ dependencies = [
 
 [project.scripts]
 autogen-kubernetes-mcp = "autogen_kubernetes_mcp.server:main"
+
+[tool.hatch.build.target.wheel]
+packages = ["src/autogen_kubernetes_mcp"]
 
 [tool.ruff]
 extend = "../../pyproject.toml"

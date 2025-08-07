@@ -24,6 +24,7 @@ dev-dependencies = [
 
 [tool.uv.sources]
 autogen-kubernetes = { workspace = true }
+autogen-kubernetes-mcp = { workspace = true }
 
 [tool.ruff]
 line-length = 120
