@@ -11,9 +11,29 @@ classifiers = [
 ]
 dependencies = [
     "autogen-kubernetes>=0.5.1",
-    "mcp>=1.0.0",
+    "mcp>=1.12.2",
     "openai-harmony",
 ]
 
 [project.scripts]
 autogen-kubernetes-mcp = "autogen_kubernetes_mcp.server:main"
+
+[tool.ruff]
+extend = "../../pyproject.toml"
+include = ["src/**", "tests/*.py"]
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+testpaths = ["tests"]
+asyncio_default_fixture_loop_scope = "module"
+
+[tool.poe]
+include = "../../shared_tasks.toml"
+
+[tool.poe.tasks]
+test = "pytest -n auto"
+
+[tool.mypy]
+[[tool.mypy.overrides]]
+module = "kubernetes.*"
+ignore_missing_imports = true
