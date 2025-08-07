@@ -1,14 +1,9 @@
 import argparse
-from typing import cast
 
-from autogen_core import CancellationToken, ComponentModel
-from autogen_core.code_executor import CodeBlock, CodeExecutor
-from autogen_kubernetes.code_executors import (
-    PodCommandLineCodeExecutor,
-    PodCommandLineCodeExecutorConfig,
-)
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
+
+from ._executor import make_executor, run_code
 
 parser = argparse.ArgumentParser(description="autogen-kubernetes arguments")
 parser.add_argument("--kubeconfig", dest="kube_config_file", default=None)
@@ -21,16 +16,6 @@ parser.add_argument("--volume", default=None)
 parser.add_argument("--pod-spec", default=None)
 
 args = parser.parse_args()
-pod_commandline_executor_config = PodCommandLineCodeExecutorConfig(**vars(args))
-component_model = ComponentModel(
-    provider="autogen_kubernetes.code_executors.PodCommandLineCodeExecutor",
-    component_type=PodCommandLineCodeExecutor.component_type,
-    version=PodCommandLineCodeExecutor.component_version,
-    component_version=PodCommandLineCodeExecutor.component_version,
-    description=PodCommandLineCodeExecutor.component_description,
-    label=PodCommandLineCodeExecutor.__name__,
-    config=pod_commandline_executor_config.model_dump(exclude_none=True),
-)
 
 mcp = FastMCP(
     name="python",
@@ -50,14 +35,9 @@ When you send a message containing python code to python, it will be executed in
     """,
 )
 async def python(code: str) -> str:
-    async with PodCommandLineCodeExecutor.load_component(component_model) as executor:
-        code_result = await executor.execute_code_blocks(
-            code_blocks=[
-                CodeBlock(language="python", code=code),
-            ],
-            cancellation_token=CancellationToken(),
-        )
-        return code_result.output
+    async with make_executor(vars(args)) as executor:
+        result: str = await run_code(executor, code)
+        return result
 
 
 if __name__ == "__main__":
