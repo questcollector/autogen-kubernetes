@@ -10,9 +10,6 @@ on:
         options:
           - autogen-kubernetes
           - autogen-kubernetes-mcp
-  push:
-    tags:
-    - "v*"
 
 jobs:
   deploy-package:
