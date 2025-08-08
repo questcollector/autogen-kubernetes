@@ -112,7 +112,7 @@ wheels = [
 
 [[package]]
 name = "autogen-kubernetes"
-version = "0.5.1"
+version = "0.5.2"
 source = { editable = "packages/autogen-kubernetes" }
 dependencies = [
     { name = "asyncio-atexit" },
@@ -133,7 +133,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "asyncio-atexit", specifier = ">=1.0.1" },
-    { name = "autogen-core", specifier = ">=0.5.1" },
+    { name = "autogen-core", specifier = ">=0.5.2" },
     { name = "httpx" },
     { name = "kubernetes", specifier = ">=27.0.0" },
     { name = "pyyaml" },
@@ -142,14 +142,14 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "autogen-agentchat", specifier = ">=0.5.1" },
+    { name = "autogen-agentchat", specifier = ">=0.5.2" },
     { name = "kubernetes-stubs" },
     { name = "types-pyyaml" },
 ]
 
 [[package]]
 name = "autogen-kubernetes-mcp"
-version = "0.5.1"
+version = "0.5.2"
 source = { editable = "packages/autogen-kubernetes-mcp" }
 dependencies = [
     { name = "autogen-kubernetes" },
