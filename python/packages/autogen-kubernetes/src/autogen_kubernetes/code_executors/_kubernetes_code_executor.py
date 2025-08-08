@@ -315,9 +315,16 @@ $functions"""
         if "spec" not in clean_pod_spec_dict:
             clean_pod_spec_dict |= {"spec": default_pod_spec["spec"]}
 
+        if (
+            "automountServiceAccountToken" not in clean_pod_spec_dict["spec"]
+            or "automount_service_account_token" not in clean_pod_spec_dict["spec"]
+        ):
+            clean_pod_spec_dict["spec"] |= {
+                "automount_service_account_token": default_pod_spec["spec"]["automount_service_account_token"]
+            }
         if "containers" not in clean_pod_spec_dict["spec"]:
             clean_pod_spec_dict["spec"] |= {"containers": default_pod_spec["spec"]["containers"]}
-        if "restart_policy" not in clean_pod_spec_dict["spec"]:
+        if "restart_policy" not in clean_pod_spec_dict["spec"] or "restartPolicy" not in clean_pod_spec_dict["spec"]:
             clean_pod_spec_dict["spec"] |= {"restart_policy": default_pod_spec["spec"]["restart_policy"]}
         has_executor_pod = False
         for container in clean_pod_spec_dict["spec"]["containers"]:
@@ -379,6 +386,7 @@ $functions"""
             image=self._image,
         )
         pod_spec = V1PodSpec(restart_policy="Never", containers=[executor_container])
+        pod_spec.automount_service_account_token = False
 
         pod.metadata = metadata
         pod.spec = pod_spec
