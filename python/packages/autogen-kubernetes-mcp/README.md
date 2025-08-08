@@ -23,7 +23,7 @@ uv pip install autogen-kubernetes-mcp
 3. Run via `uvx`
 
 ```bash
-uvx autogen-kubernetes-mcp -- --namespace my-namespace --image python:3.11-slim
+uvx autogen-kubernetes-mcp --namespace my-namespace --image python:3.11-slim
 ```
 > Note: When using `uvx`, arguments must be passed after `--`.
 
