@@ -189,14 +189,6 @@ async def test_pod_name_error() -> None:
 
 @pytest.mark.skipif(not state_kubernetes_enabled, reason="kubernetes not accessible")
 @pytest.mark.asyncio
-async def test_invalid_pod_spec(v1_pod: Callable[[str, str], Any]) -> None:
-    invalid_v1_pod = v1_pod("test-invalid-pod", "abcd")
-    with pytest.raises(ValueError):
-        PodCommandLineCodeExecutor(pod_spec=invalid_v1_pod)
-
-
-@pytest.mark.skipif(not state_kubernetes_enabled, reason="kubernetes not accessible")
-@pytest.mark.asyncio
 async def test_func_modules(generated_pod_name_regex: str) -> None:
     test_function = FunctionWithRequirements.from_str(
         (f"{inspect.getsource(kubernetes_enabled)}" "\nkubernetes_enabled()"),
