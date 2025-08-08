@@ -15,7 +15,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--image", default="python:3-slim")
     parser.add_argument("--pod-name", default=None)
     parser.add_argument("--timeout", type=int, default=60)
-    parser.add_argument("--workspace_path", default="/workspace")
+    parser.add_argument("--workspace-path", default="/workspace")
     parser.add_argument("-n", "--namespace", default="default")
     parser.add_argument("--volume", default=None)
     parser.add_argument("--pod-spec", default=None)
