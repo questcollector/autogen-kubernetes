@@ -17,7 +17,18 @@ from collections.abc import Sequence
 from hashlib import sha256
 from pathlib import Path
 from types import TracebackType
-from typing import Any, Callable, ClassVar, Dict, List, Optional, ParamSpec, Tuple, Type, Union
+from typing import (
+    Any,
+    Callable,
+    ClassVar,
+    Dict,
+    List,
+    Optional,
+    ParamSpec,
+    Tuple,
+    Type,
+    Union,
+)
 
 import asyncio_atexit
 import kubernetes.client
@@ -34,7 +45,13 @@ from autogen_core.code_executor._func_with_reqs import (
     build_python_functions_file,
 )
 from httpx import HTTPStatusError
-from kubernetes.client.models import V1Container, V1ObjectMeta, V1Pod, V1PodSpec, V1Volume
+from kubernetes.client.models import (
+    V1Container,
+    V1ObjectMeta,
+    V1Pod,
+    V1PodSpec,
+    V1Volume,
+)
 from pydantic import BaseModel
 
 from ._utils import (
@@ -266,6 +283,8 @@ $functions"""
         if pod_spec is None:  ## create pod_spec from other parameters
             self._pod = self._define_pod_spec()
         else:
+            ## merge default pod spec
+            pod_spec_dict = self._merge_with_default_pod_spec(pod_spec_dict)
             self._pod = pod_spec_dict
 
         self._validate_pod()
@@ -282,6 +301,43 @@ $functions"""
             self._setup_functions_complete = True
 
         self._running = False
+
+    def _merge_with_default_pod_spec(self, pod_spec_dict: dict[str, Any]) -> dict[str, Any]:
+        clean_pod_spec_dict: dict[str, Any] = clean_none_value(pod_spec_dict)
+        default_pod_spec = self._define_pod_spec()
+        if "metadata" not in clean_pod_spec_dict:
+            clean_pod_spec_dict |= {"metadata": default_pod_spec["metadata"]}
+        if "name" not in clean_pod_spec_dict["metadata"]:
+            clean_pod_spec_dict["metadata"] |= {"name": default_pod_spec["metadata"]["name"]}
+        if "namespace" not in clean_pod_spec_dict["metadata"]:
+            clean_pod_spec_dict["metadata"] |= {"namespace": default_pod_spec["metadata"]["namespace"]}
+
+        if "spec" not in clean_pod_spec_dict:
+            clean_pod_spec_dict |= {"spec": default_pod_spec["spec"]}
+
+        if "containers" not in clean_pod_spec_dict["spec"]:
+            clean_pod_spec_dict["spec"] |= {"containers": default_pod_spec["spec"]["containers"]}
+        if "restart_policy" not in clean_pod_spec_dict["spec"]:
+            clean_pod_spec_dict["spec"] |= {"restart_policy": default_pod_spec["spec"]["restart_policy"]}
+        has_executor_pod = False
+        for container in clean_pod_spec_dict["spec"]["containers"]:
+            if container["name"] == "autogen-executor":
+                has_executor_pod = True
+        if not has_executor_pod:
+            clean_pod_spec_dict["spec"]["containers"].append(default_pod_spec["spec"]["containers"][0])
+
+        if "volumes" in default_pod_spec["spec"]:
+            if "volumes" not in clean_pod_spec_dict["spec"]:
+                clean_pod_spec_dict["spec"] |= {"volumes": []}
+            for default_volume in default_pod_spec["spec"]["volumes"]:
+                has_volume = False
+                for volume in clean_pod_spec_dict["spec"]["volumes"]:
+                    if volume["name"] == default_volume["name"]:
+                        has_volume = True
+                if not has_volume:
+                    clean_pod_spec_dict["spec"]["volumes"].append(default_volume)
+
+        return clean_pod_spec_dict
 
     @property
     def timeout(self) -> int:
