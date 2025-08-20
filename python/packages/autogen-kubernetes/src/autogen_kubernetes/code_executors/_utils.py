@@ -32,7 +32,7 @@ import kubernetes.client
 import yaml
 from autogen_core.code_executor import CodeResult
 from typing_extensions import ParamSpec
-from websockets.asyncio.client import connect
+from websockets.asyncio.client import ClientConnection, connect
 from websockets.exceptions import ConnectionClosed
 from websockets.typing import Subprotocol
 
@@ -249,6 +249,64 @@ async def delete_pod(kube_config: Any, pod_name: str, namespace: str) -> Any:
         else:
             logging.info("Failed to get pod status: {response.status_code}")
             response.raise_for_status()
+
+
+async def create_namespaced_corev1_resource(
+    kube_config: Any, resource_spec: dict[str, Any], dry_run: bool = False
+) -> Any:
+    api_server_url = kube_config.host
+    ssl_context, headers = _create_ssl_context_and_headers(kube_config)
+    headers.update(
+        {
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        }
+    )
+
+    namespace = resource_spec["metadata"]["namespace"]
+    kind = str(resource_spec["kind"]).lower() + "s"
+    url = f"{api_server_url}/api/v1/namespaces/{namespace}/{kind}"
+    if dry_run:
+        url += "?dryRun=All"
+
+    async with httpx.AsyncClient(verify=ssl_context) as httpx_client:
+        response = await httpx_client.post(url, headers=headers, json=resource_spec)
+        if response.status_code == HttpStatusCode.CREATED:
+            return response.json()
+        else:
+            logging.info("Failed to create pod: {response.status_code}")
+            response.raise_for_status()
+
+
+async def delete_namespaced_corev1_resource(kube_config: Any, kind: str, name: str, namespace: str) -> Any:
+    api_server_url = kube_config.host
+    ssl_context, headers = _create_ssl_context_and_headers(kube_config)
+    headers.update({"Accept": "application/json"})
+
+    url = f"{api_server_url}/api/v1/namespaces/{namespace}/{kind.lower() + 's'}/{name}"
+
+    async with httpx.AsyncClient(verify=ssl_context) as httpx_client:
+        response = await httpx_client.delete(url, headers=headers)
+        if response.status_code in [HttpStatusCode.OK, HttpStatusCode.ACCEPTED]:
+            return response.json()
+        else:
+            logging.info("Failed to get pod status: {response.status_code}")
+            response.raise_for_status()
+
+
+def get_apiserver_http_client(kube_config: Any, pod_name: str, namespace: str) -> httpx.AsyncClient:
+    ssl_context, headers = _create_ssl_context_and_headers(kube_config)
+    return httpx.AsyncClient(verify=ssl_context)
+
+
+async def get_apiserver_websocket(
+    kube_config: Any, pod_name: str, namespace: str, path: str, headers: dict[str, str]
+) -> ClientConnection:
+    api_server_url = kube_config.host
+    ssl_context, headers = _create_ssl_context_and_headers(kube_config)
+    url = f"{api_server_url}/api/v1/namespaces/{namespace}/pods/{pod_name}/proxy{path}".replace("https://", "wss://")
+    subprotocols = [Subprotocol(websocket_subprotocol_kubernetes_api)]
+    return await connect(url, ssl=ssl_context, additional_headers=headers, subprotocols=subprotocols)
 
 
 # Source below based from: https://github.com/microsoft/autogen/blob/main/python/packages/autogen-ext/src/autogen_ext/code_executors/_common.py
