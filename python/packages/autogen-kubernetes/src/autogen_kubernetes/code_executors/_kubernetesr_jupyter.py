@@ -12,7 +12,7 @@ from typing import List, Optional, Union
 from autogen_core import CancellationToken, Component
 from autogen_core.code_executor import CodeBlock, CodeExecutor, CodeResult
 from autogen_ext.code_executors._common import silence_pip
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing_extensions import Self
 
 from ._jupyter_server import (
@@ -33,13 +33,12 @@ class PodJupyterCodeResult(CodeResult):
 class PodJupyterCodeExecutorConfig(BaseModel):
     """Configuration for JupyterCodeExecutor"""
 
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     jupyter_server: Union[PodJupyterServer, PodJupyterConnectionInfo]
     kernel_name: str = "python3"
     timeout: int = 60
     output_dir: Optional[Union[Path, str]] = None
-
-    class Config:
-        arbitrary_types_allowed = True
 
 
 class PodJupyterCodeExecutor(CodeExecutor, Component[PodJupyterCodeExecutorConfig]):
@@ -157,7 +156,9 @@ class PodJupyterCodeExecutor(CodeExecutor, Component[PodJupyterCodeExecutorConfi
     """
 
     component_config_schema = PodJupyterCodeExecutorConfig
-    component_provider_override = "autogen_kubernetes.code_executors.PodJupyterCodeExecutor"
+    component_provider_override = (
+        "autogen_kubernetes.code_executors.PodJupyterCodeExecutor"
+    )
 
     def __init__(
         self,
@@ -174,7 +175,9 @@ class PodJupyterCodeExecutor(CodeExecutor, Component[PodJupyterCodeExecutorConfi
         elif isinstance(jupyter_server, PodJupyterConnectionInfo):
             self._connection_info = jupyter_server
         else:
-            raise ValueError("jupyter_server must be a PodJupyterServer or PodJupyterConnectionInfo.")
+            raise ValueError(
+                "jupyter_server must be a PodJupyterServer or PodJupyterConnectionInfo."
+            )
 
         self._output_dir = output_dir
         if not self._output_dir:
@@ -195,7 +198,9 @@ class PodJupyterCodeExecutor(CodeExecutor, Component[PodJupyterCodeExecutorConfi
             await self.start()
             assert self._kernel_id is not None
         if self._async_jupyter_kernel_client is None:
-            self._async_jupyter_kernel_client = await self._jupyter_client.get_kernel_client(self._kernel_id)
+            self._async_jupyter_kernel_client = (
+                await self._jupyter_client.get_kernel_client(self._kernel_id)
+            )
         return self._async_jupyter_kernel_client
 
     async def execute_code_blocks(
@@ -217,14 +222,18 @@ class PodJupyterCodeExecutor(CodeExecutor, Component[PodJupyterCodeExecutorConfi
         # Wait for kernel to be ready using async client
         is_ready = await kernel_client.wait_for_ready(timeout_seconds=self._timeout)
         if not is_ready:
-            return PodJupyterCodeResult(exit_code=1, output="ERROR: Kernel not ready", output_files=[])
+            return PodJupyterCodeResult(
+                exit_code=1, output="ERROR: Kernel not ready", output_files=[]
+            )
 
         outputs: List[str] = []
         output_files: List[Path] = []
         for code_block in code_blocks:
             code = silence_pip(code_block.code, code_block.language)
             # Execute code using async client
-            exec_task = asyncio.create_task(kernel_client.execute(code, timeout_seconds=self._timeout))
+            exec_task = asyncio.create_task(
+                kernel_client.execute(code, timeout_seconds=self._timeout)
+            )
             cancellation_token.link_future(exec_task)
             result = await exec_task
             if result.is_ok:
@@ -265,6 +274,7 @@ class PodJupyterCodeExecutor(CodeExecutor, Component[PodJupyterCodeExecutorConfi
 
     async def start(self) -> None:
         """(Experimental) Start a new session."""
+        await self._jupyter_client.wait_for_service()
         available_kernels = await self._jupyter_client.list_kernel_specs()
         if self._kernel_name not in available_kernels["kernelspecs"]:
             raise ValueError(f"Kernel {self._kernel_name} is not installed.")
