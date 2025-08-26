@@ -23,6 +23,10 @@ from ._jupyter_server import (
 from ._utils import silence_pip
 
 
+# Source below based from: https://github.com/microsoft/autogen/blob/main/python/packages/autogen-ext/src/autogen_ext/code_executors/docker_jupyter/_docker_jupyter.py
+# Credit to original authors
+# Original code Licensed under the MIT License.
+# See the License file for the full license text.
 @dataclass
 class PodJupyterCodeResult(CodeResult):
     """(Experimental) A code result class for IPython code executor."""
@@ -68,12 +72,12 @@ class PodJupyterCodeExecutor(CodeExecutor, Component[PodJupyterCodeExecutorConfi
         import asyncio
         from autogen_core import CancellationToken
         from autogen_core.code_executor import CodeBlock
-        from autogen_ext.code_executors.docker_jupyter import DockerJupyterCodeExecutor, DockerJupyterServer
+        from autogen_kubernetes.code_executors import PodJupyterCodeExecutor, PodJupyterServer
 
 
         async def main() -> None:
-            async with DockerJupyterServer() as jupyter_server:
-                async with DockerJupyterCodeExecutor(jupyter_server=jupyter_server) as executor:
+            async with PodJupyterServer() as jupyter_server:
+                async with PodJupyterCodeExecutor(jupyter_server=jupyter_server) as executor:
                     code_blocks = [CodeBlock(code="print('hello world!')", language="python")]
                     code_result = await executor.execute_code_blocks(code_blocks, cancellation_token=CancellationToken())
                     print(code_result)
@@ -88,11 +92,11 @@ class PodJupyterCodeExecutor(CodeExecutor, Component[PodJupyterCodeExecutorConfi
         import asyncio
         from autogen_core import CancellationToken
         from autogen_core.code_executor import CodeBlock
-        from autogen_ext.code_executors.docker_jupyter import DockerJupyterCodeExecutor, DockerJupyterServer
+        from autogen_kubernetes.code_executors import PodJupyterCodeExecutor, PodJupyterServer
 
 
         async def main() -> None:
-            async with DockerJupyterServer(custom_image_name="your_custom_images_name", expose_port=8888) as jupyter_server:
+            async with PodJupyterServer(image="your_custom_images_name", port=8888) as jupyter_server:
                 async with DockerJupyterCodeExecutor(jupyter_server=jupyter_server) as executor:
                     code_blocks = [CodeBlock(code="print('hello world!')", language="python")]
                     code_result = await executor.execute_code_blocks(code_blocks, cancellation_token=CancellationToken())
@@ -107,14 +111,14 @@ class PodJupyterCodeExecutor(CodeExecutor, Component[PodJupyterCodeExecutorConfi
 
         import asyncio
         from autogen_agentchat.agents import AssistantAgent
-        from autogen_ext.code_executors.docker_jupyter import DockerJupyterCodeExecutor, DockerJupyterServer
+        from autogen_kubernetes.code_executors import PodJupyterCodeExecutor, PodJupyterServer
         from autogen_ext.models.openai import OpenAIChatCompletionClient
         from autogen_ext.tools.code_execution import PythonCodeExecutionTool
 
 
         async def main() -> None:
-            async with DockerJupyterServer() as jupyter_server:
-                async with DockerJupyterCodeExecutor(jupyter_server=jupyter_server) as executor:
+            async with PodJupyterServer() as jupyter_server:
+                async with PodJupyterCodeExecutor(jupyter_server=jupyter_server) as executor:
                     tool = PythonCodeExecutionTool(executor)
                     model_client = OpenAIChatCompletionClient(model="gpt-4o")
                     agent = AssistantAgent("assistant", model_client=model_client, tools=[tool])
@@ -131,13 +135,13 @@ class PodJupyterCodeExecutor(CodeExecutor, Component[PodJupyterCodeExecutorConfi
         import asyncio
         from autogen_agentchat.agents import CodeExecutorAgent
         from autogen_agentchat.messages import TextMessage
-        from autogen_ext.code_executors.docker_jupyter import DockerJupyterCodeExecutor, DockerJupyterServer
+        from autogen_kubernetes.code_executors import PodJupyterCodeExecutor, PodJupyterServer
         from autogen_core import CancellationToken
 
 
         async def main() -> None:
-            async with DockerJupyterServer() as jupyter_server:
-                async with DockerJupyterCodeExecutor(jupyter_server=jupyter_server) as executor:
+            async with PodJupyterServer() as jupyter_server:
+                async with PodJupyterCodeExecutor(jupyter_server=jupyter_server) as executor:
                     code_executor_agent = CodeExecutorAgent("code_executor", code_executor=executor)
                     task = TextMessage(
                         content='''Here is some code

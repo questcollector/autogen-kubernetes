@@ -1,0 +1,63 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  annotations:
+    test: "true"
+  labels:
+    run: test-jupyter
+  name: test-jupyter
+  namespace: default
+spec:
+  serviceAccountName: default
+  containers:
+  - image: quay.io/jupyter/docker-stacks-foundation:2025-08-25
+    name: autogen-executor
+    command:
+    - /bin/bash
+    - -o
+    - pipefail
+    - -c
+    - "\n        mamba install --yes jupyter_kernel_gateway ipykernel &&             mamba
+      clean --all -f -y &&             fix-permissions \"${CONDA_DIR}\" &&             fix-permissions
+      \"/home/${NB_USER}\";         python -m jupyter kernelgateway --KernelGatewayApp.ip=0.0.0.0
+      \            --JupyterApp.answer_yes=true             --JupyterWebsocketPersonality.list_kernels=true;\n
+      \       "
+    env:
+    - name: KG_PORT
+      value: "8888"
+    envFrom:
+    - secretRef:
+        name: test-jupyter-secret
+    ports:
+    - containerPort: 8888
+      name: jupyter
+      protocol: TCP
+    workingDir: /workspace
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    run: test-jupyter
+  name: test-jupyter
+  namespace: default
+spec:
+  ports:
+  - name: jupyter
+    port: 8888
+    protocol: TCP
+    targetPort: jupyter
+  selector:
+    run: test-jupyter
+  type: ClusterIP
+---
+apiVersion: v1
+data:
+  KG_AUTH_TOKEN: YmY5YmJmNzA5ZDQwYWVlMDMwODA5ZGNkMTcxYzJiNGY5MjI3ZjBmMzUzY2NlZTAyZDBlMTRmZDBmNDAwOGM0Ng==
+kind: Secret
+metadata:
+  labels:
+    run: test-jupyter
+  name: test-jupyter-secret
+  namespace: default
+type: Opaque
