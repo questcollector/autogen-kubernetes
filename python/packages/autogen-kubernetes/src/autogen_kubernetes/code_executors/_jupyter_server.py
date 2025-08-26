@@ -157,7 +157,7 @@ class PodJupyterServer:
             fix-permissions "/home/${NB_USER}"; \
         python -m jupyter kernelgateway --KernelGatewayApp.ip=0.0.0.0 \
             --JupyterApp.answer_yes=true \
-            --JupyterWebsocketPersonality.list_kernels=true --log-level=DEBUG;
+            --JupyterWebsocketPersonality.list_kernels=true;
         """,
     ]
     DEFAULT_PORT = 8888
