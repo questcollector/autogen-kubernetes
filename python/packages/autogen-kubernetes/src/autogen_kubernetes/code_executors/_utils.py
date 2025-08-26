@@ -58,15 +58,6 @@ class HttpStatusCode(IntEnum):
 POD_NAME_PATTERN = r"^[a-z0-9](?:[a-z0-9-]{0,61})[a-z0-9]?$"
 
 
-def clean_none_value(data: Any) -> Any:
-    if isinstance(data, dict):
-        return {k: clean_none_value(v) for k, v in data.items() if v is not None}
-    elif isinstance(data, list):
-        return [clean_none_value(x) for x in data if x is not None]
-    else:
-        return data
-
-
 # Source below based from: https://github.com/kubernetes-client/python/blob/master/kubernetes/client/api_client.py
 # Credit to original authors
 # Original code Licensed under the Apache-2.0 license
@@ -125,15 +116,11 @@ def _create_ssl_context_and_headers(
     if "authorization" in kube_config.api_key:  ## Bearer token
         headers.update({"Authorization": kube_config.api_key["authorization"]})
     else:  ## ssl cafile and keyfile
-        ssl_context.load_cert_chain(
-            certfile=kube_config.cert_file, keyfile=kube_config.key_file
-        )
+        ssl_context.load_cert_chain(certfile=kube_config.cert_file, keyfile=kube_config.key_file)
     return ssl_context, headers
 
 
-websocket_subprotocol_kubernetes_api = os.environ.get(
-    "WEBSOCKET_SUBPROTOCOL_KUBERNETES_API", "v4.channel.k8s.io"
-)
+websocket_subprotocol_kubernetes_api = os.environ.get("WEBSOCKET_SUBPROTOCOL_KUBERNETES_API", "v4.channel.k8s.io")
 
 
 async def pod_exec_stream(
@@ -159,17 +146,9 @@ async def pod_exec_stream(
     }
     if not command:
         raise ValueError("command must not be empty list")
-    command_query_string = "&".join(
-        f"command={urllib.parse.quote_plus(cmd)}" for cmd in command
-    )
-    query_string = "&".join(
-        f"{key}={urllib.parse.quote_plus(value)}"
-        for key, value in params.items()
-        if value
-    )
-    websocket_url = f"{url}?{command_query_string}&{query_string}".replace(
-        "https://", "wss://"
-    )
+    command_query_string = "&".join(f"command={urllib.parse.quote_plus(cmd)}" for cmd in command)
+    query_string = "&".join(f"{key}={urllib.parse.quote_plus(value)}" for key, value in params.items() if value)
+    websocket_url = f"{url}?{command_query_string}&{query_string}".replace("https://", "wss://")
     subprotocols = [Subprotocol(websocket_subprotocol_kubernetes_api)]
 
     async with connect(
@@ -248,50 +227,6 @@ async def get_pod_logs(
             response.raise_for_status()
 
 
-async def create_pod(
-    kube_config: Any,
-    pod_spec: dict[str, Any],
-    dry_run: bool = False,
-) -> Any:
-    api_server_url = kube_config.host
-    ssl_context, headers = _create_ssl_context_and_headers(kube_config)
-    headers.update(
-        {
-            "Accept": "application/json",
-            "Content-Type": "application/json",
-        }
-    )
-
-    namespace = pod_spec["metadata"]["namespace"]
-    url = f"{api_server_url}/api/v1/namespaces/{namespace}/pods"
-    if dry_run:
-        url += "?dryRun=All"
-
-    async with httpx.AsyncClient(verify=ssl_context) as httpx_client:
-        response = await httpx_client.post(url, headers=headers, json=pod_spec)
-        if response.status_code == HttpStatusCode.CREATED:
-            return response.json()
-        else:
-            logging.info("Failed to create pod: {response.status_code}")
-            response.raise_for_status()
-
-
-async def delete_pod(kube_config: Any, pod_name: str, namespace: str) -> Any:
-    api_server_url = kube_config.host
-    ssl_context, headers = _create_ssl_context_and_headers(kube_config)
-    headers.update({"Accept": "application/json"})
-
-    url = f"{api_server_url}/api/v1/namespaces/{namespace}/pods/{pod_name}"
-
-    async with httpx.AsyncClient(verify=ssl_context) as httpx_client:
-        response = await httpx_client.delete(url, headers=headers)
-        if response.status_code in [HttpStatusCode.OK, HttpStatusCode.ACCEPTED]:
-            return response.json()
-        else:
-            logging.info("Failed to get pod status: {response.status_code}")
-            response.raise_for_status()
-
-
 async def create_namespaced_corev1_resource(
     kube_config: Any, resource_spec: dict[str, Any], dry_run: bool = False
 ) -> Any:
@@ -319,9 +254,7 @@ async def create_namespaced_corev1_resource(
             response.raise_for_status()
 
 
-async def delete_namespaced_corev1_resource(
-    kube_config: Any, resource: dict[str, Any]
-) -> Any:
+async def delete_namespaced_corev1_resource(kube_config: Any, resource: dict[str, Any]) -> Any:
     api_server_url = kube_config.host
     ssl_context, headers = _create_ssl_context_and_headers(kube_config)
     headers.update({"Accept": "application/json"})
@@ -339,27 +272,6 @@ async def delete_namespaced_corev1_resource(
         else:
             logging.info("Failed to get pod status: {response.status_code}")
             response.raise_for_status()
-
-
-def get_apiserver_http_client(
-    kube_config: Any, pod_name: str, namespace: str
-) -> httpx.AsyncClient:
-    ssl_context, headers = _create_ssl_context_and_headers(kube_config)
-    return httpx.AsyncClient(verify=ssl_context)
-
-
-async def get_apiserver_websocket(
-    kube_config: Any, pod_name: str, namespace: str, port: int, path: str
-) -> ClientConnection:
-    api_server_url = kube_config.host
-    ssl_context, headers = _create_ssl_context_and_headers(kube_config)
-    url = f"{api_server_url}/api/v1/namespaces/{namespace}/pods/{pod_name}:{port}/proxy{path}".replace(
-        "https://", "wss://"
-    )
-    subprotocol = Subprotocol("v2.kernel.websocket.jupyter.org")
-    return await connect(
-        url, ssl=ssl_context, additional_headers=headers, subprotocols=[subprotocol]
-    )
 
 
 # Source below based from: https://github.com/microsoft/autogen/blob/main/python/packages/autogen-ext/src/autogen_ext/code_executors/_common.py

@@ -58,13 +58,13 @@ from ._utils import (
     POD_NAME_PATTERN,
     CommandLineCodeResult,
     StreamChannel,
-    clean_none_value,
-    create_pod,
-    delete_pod,
+    create_namespaced_corev1_resource,
+    delete_namespaced_corev1_resource,
     get_file_name_from_content,
     get_pod_logs,
     lang_to_cmd,
     pod_exec_stream,
+    sanitize_for_serialization,
     silence_pip,
     wait_for_ready,
 )
@@ -238,7 +238,7 @@ $functions"""
         elif isinstance(volume, str):  # YAML string to dict
             volume_json = yaml.safe_load(volume)
         elif isinstance(volume, V1Volume):
-            volume_json = clean_none_value(dict(volume.to_dict()))
+            volume_json = sanitize_for_serialization(volume)
         elif isinstance(volume, dict):
             volume_json = volume
 
@@ -276,7 +276,7 @@ $functions"""
         elif isinstance(pod_spec, str):  # YAML string to dict
             pod_spec_dict = yaml.safe_load(pod_spec)
         elif isinstance(pod_spec, V1Pod):
-            pod_spec_dict = clean_none_value(dict(pod_spec.to_dict()))
+            pod_spec_dict = sanitize_for_serialization(pod_spec)
         elif isinstance(pod_spec, dict):
             pod_spec_dict = pod_spec
 
@@ -303,7 +303,8 @@ $functions"""
         self._running = False
 
     def _merge_with_default_pod_spec(self, pod_spec_dict: dict[str, Any]) -> dict[str, Any]:
-        clean_pod_spec_dict: dict[str, Any] = clean_none_value(pod_spec_dict)
+        clean_pod_spec_dict: dict[str, Any] = sanitize_for_serialization(pod_spec_dict)
+        clean_pod_spec_dict["kind"] = "Pod"
         default_pod_spec = self._define_pod_spec()
         if "metadata" not in clean_pod_spec_dict:
             clean_pod_spec_dict |= {"metadata": default_pod_spec["metadata"]}
@@ -315,17 +316,14 @@ $functions"""
         if "spec" not in clean_pod_spec_dict:
             clean_pod_spec_dict |= {"spec": default_pod_spec["spec"]}
 
-        if (
-            "automountServiceAccountToken" not in clean_pod_spec_dict["spec"]
-            or "automount_service_account_token" not in clean_pod_spec_dict["spec"]
-        ):
+        if "automountServiceAccountToken" not in clean_pod_spec_dict["spec"]:
             clean_pod_spec_dict["spec"] |= {
-                "automount_service_account_token": default_pod_spec["spec"]["automount_service_account_token"]
+                "automountServiceAccountToken": default_pod_spec["spec"]["automountServiceAccountToken"]
             }
         if "containers" not in clean_pod_spec_dict["spec"]:
             clean_pod_spec_dict["spec"] |= {"containers": default_pod_spec["spec"]["containers"]}
-        if "restart_policy" not in clean_pod_spec_dict["spec"] or "restartPolicy" not in clean_pod_spec_dict["spec"]:
-            clean_pod_spec_dict["spec"] |= {"restart_policy": default_pod_spec["spec"]["restart_policy"]}
+        if "restartPolicy" not in clean_pod_spec_dict["spec"]:
+            clean_pod_spec_dict["spec"] |= {"restartPolicy": default_pod_spec["spec"]["restartPolicy"]}
         has_executor_pod = False
         for container in clean_pod_spec_dict["spec"]["containers"]:
             if container["name"] == "autogen-executor":
@@ -376,7 +374,7 @@ $functions"""
             raise e from e
 
     def _define_pod_spec(self) -> Any:
-        pod = V1Pod()
+        pod = V1Pod(kind="Pod")
         metadata = V1ObjectMeta(name=self._pod_name, namespace=self._namespace)
 
         executor_container = V1Container(
@@ -391,7 +389,7 @@ $functions"""
         pod.metadata = metadata
         pod.spec = pod_spec
 
-        pod_manifest: Dict[str, Any] = clean_none_value(dict(pod.to_dict()))  # type: ignore
+        pod_manifest: Dict[str, Any] = sanitize_for_serialization(pod)  # type: ignore
 
         if self._volume is not None:
             # add volume
@@ -605,10 +603,9 @@ $functions"""
 
     async def remove(self) -> None:
         try:
-            await delete_pod(
+            await delete_namespaced_corev1_resource(
                 self._kube_config,
-                self._pod["metadata"]["name"],
-                self._pod["metadata"]["namespace"],
+                self._pod,
             )
         except HTTPStatusError:
             pass
@@ -619,7 +616,7 @@ $functions"""
         await self.remove()
 
     async def start(self) -> None:
-        self._pod = await create_pod(self._kube_config, self._pod)
+        self._pod = await create_namespaced_corev1_resource(self._kube_config, self._pod)
 
         self._pod = await wait_for_ready(
             self._kube_config,

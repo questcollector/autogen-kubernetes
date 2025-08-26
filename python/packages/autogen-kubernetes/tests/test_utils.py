@@ -3,11 +3,11 @@ from typing import Any, Callable
 import pytest
 from autogen_kubernetes.code_executors._utils import (
     StreamChannel,
-    clean_none_value,
-    create_pod,
-    delete_pod,
+    create_namespaced_corev1_resource,
+    delete_namespaced_corev1_resource,
     get_pod_logs,
     pod_exec_stream,
+    sanitize_for_serialization,
     wait_for_ready,
 )
 from conftest import state_kubernetes_enabled
@@ -22,12 +22,12 @@ def test_clean_none_value() -> None:
         name="test",
         persistent_volume_claim=V1PersistentVolumeClaimVolumeSource(claim_name="test-pvc", read_only=False),
     )
-    volume_dict = clean_none_value(dict(volume.to_dict()))  # type: ignore
-    assert "aws_elastic_block_store" not in volume_dict
+    volume_dict = sanitize_for_serialization(volume)  # type: ignore
+    assert "awsElasticBlockStore" not in volume_dict
     assert volume_dict["name"] == "test"
-    assert volume_dict["persistent_volume_claim"] == {
-        "claim_name": "test-pvc",
-        "read_only": False,
+    assert volume_dict["persistentVolumeClaim"] == {
+        "claimName": "test-pvc",
+        "readOnly": False,
     }
 
 
@@ -35,7 +35,7 @@ def test_clean_none_value() -> None:
 @pytest.mark.asyncio
 async def test_create_pod(kubeconfig: Any, pod_spec: Callable[[str], dict[str, Any]]) -> None:
     create_pod_spec = pod_spec("test-create")
-    pod = await create_pod(kubeconfig, create_pod_spec, dry_run=True)
+    pod = await create_namespaced_corev1_resource(kubeconfig, create_pod_spec, dry_run=True)
 
     assert pod["metadata"]["name"] == "test-create"
     assert len(pod["spec"]["containers"]) == 1
@@ -45,11 +45,10 @@ async def test_create_pod(kubeconfig: Any, pod_spec: Callable[[str], dict[str, A
 @pytest.mark.asyncio
 async def test_delete_pod(kubeconfig: Any, pod_spec: Callable[[str], dict[str, Any]]) -> None:
     delete_pod_spec = pod_spec("test-delete")
-    pod = await create_pod(kubeconfig, delete_pod_spec)
-    deleted_pod = await delete_pod(
+    pod = await create_namespaced_corev1_resource(kubeconfig, delete_pod_spec)
+    deleted_pod = await delete_namespaced_corev1_resource(
         kubeconfig,
-        pod_name=pod["metadata"]["name"],
-        namespace=pod["metadata"]["namespace"],
+        pod,
     )
 
     assert deleted_pod["metadata"]["name"] == "test-delete"
@@ -59,7 +58,7 @@ async def test_delete_pod(kubeconfig: Any, pod_spec: Callable[[str], dict[str, A
 @pytest.mark.asyncio
 async def test_get_pod_log(kubeconfig: Any, pod_spec: Callable[[str], dict[str, Any]]) -> None:
     get_log_pod_spec = pod_spec("test-get-log")
-    pod = await create_pod(kubeconfig, get_log_pod_spec)
+    pod = await create_namespaced_corev1_resource(kubeconfig, get_log_pod_spec)
     pod = await wait_for_ready(
         kubeconfig,
         pod_name=pod["metadata"]["name"],
@@ -71,10 +70,9 @@ async def test_get_pod_log(kubeconfig: Any, pod_spec: Callable[[str], dict[str, 
         namespace=pod["metadata"]["namespace"],
         container_name="autogen-executor",
     )
-    await delete_pod(
+    await delete_namespaced_corev1_resource(
         kubeconfig,
-        pod_name=pod["metadata"]["name"],
-        namespace=pod["metadata"]["namespace"],
+        pod,
     )
 
     assert "test container" in log
@@ -84,13 +82,17 @@ async def test_get_pod_log(kubeconfig: Any, pod_spec: Callable[[str], dict[str, 
 @pytest.mark.asyncio
 async def test_exec_pod(kubeconfig: Any, pod_spec: Callable[[str], dict[str, Any]]) -> None:
     exec_pod_spec = pod_spec("test-exec")
-    pod = await create_pod(kubeconfig, exec_pod_spec)
+    pod = await create_namespaced_corev1_resource(kubeconfig, exec_pod_spec)
     pod = await wait_for_ready(
         kubeconfig,
         pod_name=pod["metadata"]["name"],
         namespace=pod["metadata"]["namespace"],
     )
-    command = ["sh", "-c", "python3 - << EOF\nprint('stdout')\nimport sys\nprint('stderr', file=sys.stderr)\nEOF"]
+    command = [
+        "sh",
+        "-c",
+        "python3 - << EOF\nprint('stdout')\nimport sys\nprint('stderr', file=sys.stderr)\nEOF",
+    ]
     last_exit_code = 0
     async for channel, msg, exit_code in pod_exec_stream(
         kubeconfig,
@@ -108,18 +110,14 @@ async def test_exec_pod(kubeconfig: Any, pod_spec: Callable[[str], dict[str, Any
 
     assert last_exit_code == 0
 
-    await delete_pod(
-        kubeconfig,
-        pod_name=pod["metadata"]["name"],
-        namespace=pod["metadata"]["namespace"],
-    )
+    await delete_namespaced_corev1_resource(kubeconfig, pod)
 
 
 @pytest.mark.skipif(not state_kubernetes_enabled, reason="kubernetes not accessible")
 @pytest.mark.asyncio
 async def test_exec_pod_timeout(kubeconfig: Any, pod_spec: Callable[[str], dict[str, Any]]) -> None:
     exec_pod_spec = pod_spec("test-exec-timeout")
-    pod = await create_pod(kubeconfig, exec_pod_spec)
+    pod = await create_namespaced_corev1_resource(kubeconfig, exec_pod_spec)
     pod = await wait_for_ready(
         kubeconfig,
         pod_name=pod["metadata"]["name"],
@@ -139,18 +137,14 @@ async def test_exec_pod_timeout(kubeconfig: Any, pod_spec: Callable[[str], dict[
 
     assert last_exit_code == 124
 
-    await delete_pod(
-        kubeconfig,
-        pod_name=pod["metadata"]["name"],
-        namespace=pod["metadata"]["namespace"],
-    )
+    await delete_namespaced_corev1_resource(kubeconfig, pod)
 
 
 @pytest.mark.skipif(not state_kubernetes_enabled, reason="kubernetes not accessible")
 @pytest.mark.asyncio
 async def test_exec_pod_error(kubeconfig: Any, pod_spec: Callable[[str], dict[str, Any]]) -> None:
     exec_pod_spec = pod_spec("test-exec-error")
-    pod = await create_pod(kubeconfig, exec_pod_spec)
+    pod = await create_namespaced_corev1_resource(kubeconfig, exec_pod_spec)
     pod = await wait_for_ready(
         kubeconfig,
         pod_name=pod["metadata"]["name"],
@@ -170,8 +164,4 @@ async def test_exec_pod_error(kubeconfig: Any, pod_spec: Callable[[str], dict[st
 
     assert last_exit_code != 0
 
-    await delete_pod(
-        kubeconfig,
-        pod_name=pod["metadata"]["name"],
-        namespace=pod["metadata"]["namespace"],
-    )
+    await delete_namespaced_corev1_resource(kubeconfig, pod)
