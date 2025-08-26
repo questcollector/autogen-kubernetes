@@ -382,6 +382,7 @@ $functions"""
             command=["/bin/sh"],
             name=self._container_name,
             image=self._image,
+            working_dir=str(self._workspace_path),
         )
         pod_spec = V1PodSpec(restart_policy="Never", containers=[executor_container])
         pod_spec.automount_service_account_token = False
