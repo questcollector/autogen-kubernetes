@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 @pytest.mark.skipif(not state_kubernetes_enabled, reason="kubernetes not accessible")
 @pytest.mark.asyncio
 async def test_pod_spec_yaml_file() -> None:
-    yaml_file_path = Path(os.path.dirname(__file__)) / Path("test-pod.yaml")
+    yaml_file_path = Path(os.path.dirname(__file__)) / Path("spec-files/test-pod.yaml")
     async with PodCommandLineCodeExecutor(pod_spec=str(yaml_file_path)) as executor:
         code_result = await executor.execute_code_blocks(
             code_blocks=[
@@ -118,7 +118,7 @@ async def test_relative_path_error() -> None:
 @pytest.mark.skipif(not state_kubernetes_enabled, reason="kubernetes not accessible")
 @pytest.mark.asyncio
 async def test_volume_yaml_file(generated_pod_name_regex: str) -> None:
-    yaml_file_path = Path(os.path.dirname(__file__)) / Path("test-volume.yaml")
+    yaml_file_path = Path(os.path.dirname(__file__)) / Path("spec-files/test-volume.yaml")
     async with PodCommandLineCodeExecutor(volume=str(yaml_file_path)) as executor:
         code_result = await executor.execute_code_blocks(
             code_blocks=[
@@ -134,7 +134,7 @@ async def test_volume_yaml_file(generated_pod_name_regex: str) -> None:
 @pytest.mark.skipif(not state_kubernetes_enabled, reason="kubernetes not accessible")
 @pytest.mark.asyncio
 async def test_volume_yaml_str(generated_pod_name_regex: str) -> None:
-    yaml_file_path = Path(os.path.dirname(__file__)) / Path("test-volume.yaml")
+    yaml_file_path = Path(os.path.dirname(__file__)) / Path("spec-files/test-volume.yaml")
     async with PodCommandLineCodeExecutor(volume=yaml_file_path.read_text()) as executor:
         code_result = await executor.execute_code_blocks(
             code_blocks=[
