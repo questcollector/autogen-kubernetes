@@ -1,5 +1,6 @@
 import logging
 import re
+import socket
 
 import pytest
 from autogen_core import CancellationToken
@@ -15,6 +16,11 @@ logger = logging.getLogger(__name__)
 @pytest.mark.asyncio
 async def test_pod_default(generated_jupyter_pod_regex: str) -> None:
     async with PodJupyterServer() as jupyter_server:
+        connection_info = jupyter_server.connection_info
+        try:
+            socket.gethostbyname(connection_info.host)
+        except socket.error:
+            pytest.skip("cannot access jupyter server")
         async with PodJupyterCodeExecutor(jupyter_server) as executor:
             code_result = await executor.execute_code_blocks(
                 code_blocks=[

@@ -137,4 +137,4 @@ def generated_pod_name_regex() -> str:
 
 @pytest.fixture
 def generated_jupyter_pod_regex() -> str:
-    return r"^autogen-jupyterkernelgateway-[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+    return r"^autogen-jupyter-[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
