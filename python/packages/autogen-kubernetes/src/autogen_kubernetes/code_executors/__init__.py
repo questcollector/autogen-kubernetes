@@ -1,4 +1,4 @@
-from ._jupyter_server import PodJupyterConnectionInfo, PodJupyterServer
+from ._jupyter_server import PodJupyterServer, PodJupyterServerConfig
 from ._kubernetes_code_executor import (
     PodCommandLineCodeExecutor,
     PodCommandLineCodeExecutorConfig,
@@ -10,6 +10,6 @@ __all__ = [
     "PodCommandLineCodeExecutorConfig",
     "PodJupyterCodeExecutor",
     "PodJupyterCodeExecutorConfig",
-    "PodJupyterConnectionInfo",
     "PodJupyterServer",
+    "PodJupyterServerConfig",
 ]

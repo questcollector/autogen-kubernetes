@@ -52,18 +52,12 @@ class PodJupyterCodeExecutor(CodeExecutor, Component[PodJupyterCodeExecutorConfi
     Each execution is stateful and can access variables created from previous
     executions in the same session.
 
-    To use this, you need to install the following dependencies:
-
-    .. code-block:: shell
-
-        pip install "autogen-ext[docker-jupyter-executor]"
-
     Args:
         jupyter_server (Union[JupyterConnectable, JupyterConnectionInfo]): The Jupyter server to use.
         kernel_name (str): The kernel name to use. Make sure it is installed.
             By default, it is "python3".
         timeout (int): The timeout for code execution, by default 60.
-        output_dir (str): The directory to save output files, by default None.
+        output_dir (Path): The directory to save output files, by default None.
 
     Example of using it directly:
 
@@ -97,7 +91,7 @@ class PodJupyterCodeExecutor(CodeExecutor, Component[PodJupyterCodeExecutorConfi
 
         async def main() -> None:
             async with PodJupyterServer(image="your_custom_images_name", port=8888) as jupyter_server:
-                async with DockerJupyterCodeExecutor(jupyter_server=jupyter_server) as executor:
+                async with PodJupyterCodeExecutor(jupyter_server=jupyter_server) as executor:
                     code_blocks = [CodeBlock(code="print('hello world!')", language="python")]
                     code_result = await executor.execute_code_blocks(code_blocks, cancellation_token=CancellationToken())
                     print(code_result)
@@ -311,3 +305,24 @@ class PodJupyterCodeExecutor(CodeExecutor, Component[PodJupyterCodeExecutorConfi
         exc_tb: TracebackType | None,
     ) -> None:
         await self.stop()
+
+    def _to_config(self) -> PodJupyterCodeExecutorConfig:
+        """(Experimental) Convert the component to a config object"""
+
+        return PodJupyterCodeExecutorConfig(
+            jupyter_server=self._connection_info,
+            kernel_name=self._kernel_name,
+            timeout=self._timeout,
+            output_dir=self._output_dir,
+        )
+
+    @classmethod
+    def _from_config(cls, config: PodJupyterCodeExecutorConfig) -> Self:
+        """(Experimental) Create a component from a config object"""
+
+        return cls(
+            jupyter_server=config.jupyter_server,
+            kernel_name=config.kernel_name,
+            timeout=config.timeout,
+            output_dir=(config.output_dir if not isinstance(config.output_dir, str) else Path(config.output_dir)),
+        )

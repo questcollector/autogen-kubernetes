@@ -25,6 +25,7 @@ import httpx
 import kubernetes.client
 import kubernetes.config
 import yaml
+from autogen_core import Component, ComponentBase
 from httpx import HTTPStatusError
 from kubernetes.client.models import (
     V1Container,
@@ -67,9 +68,7 @@ class PodJupyterConnectionInfo(BaseModel):
 class PodJupyterClient:
     def __init__(self, connection_info: PodJupyterConnectionInfo):
         self._connection_info = connection_info
-        self._http_client: httpx.AsyncClient = httpx.AsyncClient(
-            headers=self._get_headers()
-        )
+        self._http_client: httpx.AsyncClient = httpx.AsyncClient(headers=self._get_headers())
 
     async def wait_for_service(self) -> None:
         while True:
@@ -83,9 +82,7 @@ class PodJupyterClient:
     def _get_headers(self) -> Dict[str, str]:
         if self._connection_info.token is None:
             return {}
-        return {
-            "Authorization": f"token {self._connection_info.token.get_secret_value()}"
-        }
+        return {"Authorization": f"token {self._connection_info.token.get_secret_value()}"}
 
     def _get_api_base_url(self) -> str:
         port = f":{self._connection_info.port}" if self._connection_info.port else ""
@@ -104,9 +101,7 @@ class PodJupyterClient:
         return cast(Dict[str, Dict[str, str]], response.json())
 
     async def list_kernels(self) -> List[Dict[str, str]]:
-        response = await self._http_client.get(
-            f"{self._get_api_base_url()}/api/kernels"
-        )
+        response = await self._http_client.get(f"{self._get_api_base_url()}/api/kernels")
         return cast(List[Dict[str, str]], response.json())
 
     async def start_kernel(self, kernel_spec_name: str) -> str:
@@ -151,26 +146,53 @@ class PodJupyterClient:
         await self._http_client.aclose()
 
 
-class PodJupyterServer:
-    DEFAULT_COMMAND = [
-        "/bin/bash",
-        "-o",
-        "pipefail",
-        "-c",
-        """
-        mamba install --yes jupyter_kernel_gateway ipykernel && \
-            mamba clean --all -f -y && \
-            fix-permissions "${CONDA_DIR}" && \
-            fix-permissions "/home/${NB_USER}"; \
-        python -m jupyter kernelgateway --KernelGatewayApp.ip=0.0.0.0 \
-            --JupyterApp.answer_yes=true \
-            --JupyterWebsocketPersonality.list_kernels=true;
-        """,
-    ]
-    DEFAULT_PORT = 8888
+DEFAULT_COMMAND = [
+    "/bin/bash",
+    "-o",
+    "pipefail",
+    "-c",
+    """
+    mamba install --yes jupyter_kernel_gateway ipykernel && \
+        mamba clean --all -f -y && \
+        fix-permissions "${CONDA_DIR}" && \
+        fix-permissions "/home/${NB_USER}"; \
+    python -m jupyter kernelgateway --KernelGatewayApp.ip=0.0.0.0 \
+        --JupyterApp.answer_yes=true \
+        --JupyterWebsocketPersonality.list_kernels=true;
+    """,
+]
+DEFAULT_PORT = 8888
 
+
+class PodJupyterServerConfig(BaseModel):
+    """Configuration for PodJupyterServer"""
+
+    image: Optional[str] = None
+    pod_name: Optional[str] = None
+    timeout: int = 60
+    workspace_path: Union[Path, str] = "/workspace"
+    namespace: str = "default"
+    volume: Union[dict[str, Any], str, Path, Type[V1Volume], None] = None
+    pod_spec: Union[dict[str, Any], str, Path, Type[V1Pod], None] = None
+    kube_config_file: Union[Path, str, None] = None
+    auto_remove: bool = True
+    port: int = DEFAULT_PORT
+    command: Optional[list[str]] = DEFAULT_COMMAND
+    service_spec: Union[dict[str, Any], str, Path, Type[V1Service], None] = None
+    token: Optional[SecretStr] = None
+    secret_spec: Union[dict[str, Any], str, Path, Type[V1Secret], SecretStr, None] = None
+    """when secret spec is provided as SecretStr, It should be a dictionary format"""
+
+
+class PodJupyterServer(Component[PodJupyterServerConfig], ComponentBase[BaseModel]):
     class GenerateToken:
         pass
+
+    component_type = "jupyter_server"
+    component_version = 1
+    component_description = "jupyter server component as kubernetes pod"
+    component_config_schema = PodJupyterServerConfig
+    component_provider_override = "autogen_kubernetes.code_executors.PodJupyterServer"
 
     def __init__(
         self,
@@ -179,7 +201,7 @@ class PodJupyterServer:
         pod_name: Optional[str] = None,
         command: Optional[list[str]] = DEFAULT_COMMAND,
         timeout: int = 60,
-        workspace_path: str = "/workspace",
+        workspace_path: Union[Path, str] = "/workspace",
         namespace: str = "default",
         volume: Union[dict[str, Any], str, Path, Type[V1Volume], None] = None,
         pod_spec: Union[dict[str, Any], str, Path, Type[V1Pod], None] = None,
@@ -208,7 +230,7 @@ class PodJupyterServer:
                 Must contain a container which name is "autogen-executor" for execution for codes.
                 Supports the formats of a dictionary, a YAML/json string, a YAML file path, and a kubernetes V1Pod model.
                 Must conform to the kubernetes `V1Pod` model format.
-                It has priority than above parameters. 
+                It has priority than above parameters.
                 If None, will use above parameters to create code executor pod. Defaults to None.
             auto_remove (bool, optional): If true, will automatically remove the
                 container when remove is called, when the context manager exits or when
@@ -264,19 +286,13 @@ class PodJupyterServer:
         # Set up authentication token
         if token is None:
             token = PodJupyterServer.GenerateToken()
-        self._token = (
-            secrets.token_hex(32)
-            if isinstance(token, PodJupyterServer.GenerateToken)
-            else token
-        )
+        self._token = secrets.token_hex(32) if isinstance(token, PodJupyterServer.GenerateToken) else token
 
         ## kubeconfig
         if isinstance(kube_config_file, str):
             kube_config_file = Path(kube_config_file)
 
-        if (
-            kube_config_file is None
-        ):  ## configuration from default kubeconfig or incluster
+        if kube_config_file is None:  ## configuration from default kubeconfig or incluster
             kubernetes.config.load_config()  # type: ignore
         else:
             kubernetes.config.load_config(config_file=kube_config_file)  # type: ignore
@@ -289,7 +305,14 @@ class PodJupyterServer:
         self._timeout = timeout
         self._auto_remove = auto_remove
         self._command = command
-        self._workspace_path = workspace_path
+        ## workspace
+        if isinstance(workspace_path, str):  ## path string to Path
+            workspace_path = Path(workspace_path)
+
+        if not workspace_path.is_absolute():  ## validate workspace_path
+            raise ValueError("Not supports workspace path as relative path")
+
+        self._workspace_path: Path = workspace_path
 
         ## volume
         volume_json = None
@@ -320,9 +343,7 @@ class PodJupyterServer:
         if secret_spec is not None:
             self._secret = self._read_from_resource_spec("Secret", secret_spec)
             if "KG_AUTH_TOKEN" in self._secret["data"]:
-                self._token = base64.b64decode(
-                    self._secret["data"]["KG_AUTH_TOKEN"]
-                ).decode("utf-8")
+                self._token = base64.b64decode(self._secret["data"]["KG_AUTH_TOKEN"]).decode("utf-8")
         if service_spec is not None:
             self._service = self._read_from_resource_spec("Service", service_spec)
             for p in self._service["spec"]["ports"]:
@@ -347,9 +368,7 @@ class PodJupyterServer:
                 if obj["kind"] == kind:
                     resource_dict = obj
             if not resource_dict:
-                raise ValueError(
-                    f"spec file {str(spec)} has no manifest for kind {kind}"
-                )
+                raise ValueError(f"spec file {str(spec)} has no manifest for kind {kind}")
         elif isinstance(spec, str):  # YAML string to dict
             resource_dict = yaml.safe_load(spec)
         elif isinstance(spec, types[kind]):
@@ -379,7 +398,7 @@ class PodJupyterServer:
             ],
             ports=[V1ContainerPort(container_port=self._port, name="jupyter")],
             # resources=V1ResourceRequirements(**self.DEFAULT_RESOURCES),
-            working_dir=self._workspace_path,
+            working_dir=str(self._workspace_path),
         )
         if self._token:
             executor_container.env_from = [
@@ -388,9 +407,7 @@ class PodJupyterServer:
 
             secret = V1Secret(
                 kind="Secret",
-                metadata=V1ObjectMeta(
-                    name=self._secret_name, namespace=self._namespace, labels=label
-                ),
+                metadata=V1ObjectMeta(name=self._secret_name, namespace=self._namespace, labels=label),
                 string_data={"KG_AUTH_TOKEN": self._token},
             )
             self._secret = sanitize_for_serialization(secret)
@@ -402,9 +419,7 @@ class PodJupyterServer:
 
         if self._volume:
             executor_container.volume_mounts = [
-                V1VolumeMount(
-                    mount_path=self._workspace_path, name=self._volume["name"]
-                )
+                V1VolumeMount(mount_path=str(self._workspace_path), name=self._volume["name"])
             ]
             pod_spec.volumes = [V1Volume(**self._volume)]
 
@@ -483,9 +498,7 @@ class PodJupyterServer:
                 self._pod["metadata"]["namespace"],
                 self._container_name,
             )
-            raise ValueError(
-                f"Failed to start container from image {self._image}. Logs: {logs_str}"
-            )
+            raise ValueError(f"Failed to start container from image {self._image}. Logs: {logs_str}")
 
         self._running = True
 
@@ -503,6 +516,51 @@ class PodJupyterServer:
         exc_tb: Optional[TracebackType],
     ) -> None:
         await self.stop()
+
+    def _to_config(self) -> PodJupyterServerConfig:
+        """(Experimental) Convert the component to a config object"""
+
+        return PodJupyterServerConfig(
+            image=self._image,
+            pod_name=self._pod_name,
+            timeout=self._timeout,
+            workspace_path=self._workspace_path,
+            namespace=self._namespace,
+            volume=self._volume,
+            pod_spec=self._pod,
+            kube_config_file=self._kube_config_file,
+            auto_remove=self._auto_remove,
+            port=self._port,
+            command=self._command,
+            service_spec=self._service,
+            token=SecretStr(self._token),
+            secret_spec=SecretStr(str(self._secret)),
+        )
+
+    @classmethod
+    def _from_config(cls, config: PodJupyterServerConfig) -> Self:
+        """(Experimental) Create a component from a config object"""
+
+        return cls(
+            image=config.image,
+            pod_name=config.pod_name,
+            command=config.command,
+            timeout=config.timeout,
+            workspace_path=config.workspace_path,
+            namespace=config.namespace,
+            volume=config.volume,
+            pod_spec=config.pod_spec,
+            auto_remove=config.auto_remove,
+            port=config.port,
+            service_spec=config.service_spec,
+            token=(config.token.get_secret_value() if config.token is not None else config.token),
+            secret_spec=(
+                config.secret_spec
+                if not isinstance(config.secret_spec, SecretStr)
+                else json.loads(config.secret_spec.get_secret_value())
+            ),
+            kube_config_file=config.kube_config_file,
+        )
 
 
 # Source below based from: https://github.com/microsoft/autogen/blob/main/python/packages/autogen-ext/src/autogen_ext/code_executors/docker_jupyter/_jupyter_server.py
@@ -545,9 +603,7 @@ class JupyterKernelClient:
     async def stop(self) -> None:
         await self._websocket.close()
 
-    async def _send_message(
-        self, *, content: Dict[str, Any], channel: str, message_type: str
-    ) -> str:
+    async def _send_message(self, *, content: Dict[str, Any], channel: str, message_type: str) -> str:
         timestamp = datetime.datetime.now().isoformat()
         message_id = uuid.uuid4().hex
         message = {
@@ -568,14 +624,10 @@ class JupyterKernelClient:
         await self._websocket.send(json.dumps(message))
         return message_id
 
-    async def _receive_message(
-        self, timeout_seconds: Optional[float]
-    ) -> Optional[Dict[str, Any]]:
+    async def _receive_message(self, timeout_seconds: Optional[float]) -> Optional[Dict[str, Any]]:
         try:
             if timeout_seconds is not None:
-                data = await asyncio.wait_for(
-                    self._websocket.recv(), timeout=timeout_seconds
-                )
+                data = await asyncio.wait_for(self._websocket.recv(), timeout=timeout_seconds)
             else:
                 data = await self._websocket.recv()
             if isinstance(data, bytes):
@@ -585,9 +637,7 @@ class JupyterKernelClient:
             return None
 
     async def wait_for_ready(self, timeout_seconds: Optional[float] = None) -> bool:
-        message_id = await self._send_message(
-            content={}, channel="shell", message_type="kernel_info_request"
-        )
+        message_id = await self._send_message(content={}, channel="shell", message_type="kernel_info_request")
         while True:
             message = await self._receive_message(timeout_seconds)
             # This means we timed out with no new messages.
@@ -599,9 +649,7 @@ class JupyterKernelClient:
             ):
                 return True
 
-    async def execute(
-        self, code: str, timeout_seconds: Optional[float] = None
-    ) -> ExecutionResult:
+    async def execute(self, code: str, timeout_seconds: Optional[float] = None) -> ExecutionResult:
         message_id = await self._send_message(
             content={
                 "code": code,
