@@ -5,6 +5,7 @@ import json
 import re
 import secrets
 import uuid
+from urllib.parse import urlparse
 from dataclasses import dataclass
 from pathlib import Path
 from types import TracebackType
@@ -86,13 +87,19 @@ class PodJupyterClient:
 
     def _get_api_base_url(self) -> str:
         port = f":{self._connection_info.port}" if self._connection_info.port else ""
-        api_server_url = self._connection_info.host
-        return f"http://{api_server_url}{port}"
+        if urlparse(self._connection_info.host).scheme:
+            api_server_url = self._connection_info.host
+        else:
+            api_server_url = f"http://{self._connection_info.host}"        
+        return f"{api_server_url}{port}"
 
     def _get_ws_base_url(self) -> str:
         port = f":{self._connection_info.port}" if self._connection_info.port else ""
-        api_server_url = self._connection_info.host
-        return f"ws://{api_server_url}{port}"
+        if urlparse(self._connection_info.host).scheme:
+            api_server_url = self._connection_info.host.replace("https://", "wss://")
+        else:
+            api_server_url = f"ws://{self._connection_info.host}"
+        return f"{api_server_url}{port}"
 
     async def list_kernel_specs(self) -> Dict[str, Dict[str, str]]:
         response = await self._http_client.get(
