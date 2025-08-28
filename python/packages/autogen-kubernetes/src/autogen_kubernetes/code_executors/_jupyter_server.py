@@ -4,8 +4,9 @@ import datetime
 import json
 import re
 import secrets
+import time
 import uuid
-from urllib.parse import urlparse
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from types import TracebackType
@@ -20,6 +21,7 @@ from typing import (
     cast,
     runtime_checkable,
 )
+from urllib.parse import urlparse
 
 import asyncio_atexit
 import httpx
@@ -37,7 +39,6 @@ from kubernetes.client.models import (
     V1ObjectMeta,
     V1Pod,
     V1PodSpec,
-    V1ResourceRequirements,
     V1Secret,
     V1SecretEnvSource,
     V1Service,
@@ -51,7 +52,6 @@ from typing_extensions import Self
 from websockets.asyncio.client import ClientConnection, connect
 
 from ._utils import (
-    POD_NAME_PATTERN,
     create_namespaced_corev1_resource,
     delete_namespaced_corev1_resource,
     get_pod_logs,
@@ -71,15 +71,6 @@ class PodJupyterClient:
         self._connection_info = connection_info
         self._http_client: httpx.AsyncClient = httpx.AsyncClient(headers=self._get_headers())
 
-    async def wait_for_service(self) -> None:
-        while True:
-            try:
-                response = await self.list_kernel_specs()
-                assert "kernelspecs" in response
-                break
-            except (httpx.ConnectError, AssertionError, json.decoder.JSONDecodeError):
-                await asyncio.sleep(1)
-
     def _get_headers(self) -> Dict[str, str]:
         if self._connection_info.token is None:
             return {}
@@ -90,25 +81,23 @@ class PodJupyterClient:
         if urlparse(self._connection_info.host).scheme:
             api_server_url = self._connection_info.host
         else:
-            api_server_url = f"http://{self._connection_info.host}"        
+            api_server_url = f"http://{self._connection_info.host}"
         return f"{api_server_url}{port}"
 
     def _get_ws_base_url(self) -> str:
-        port = f":{self._connection_info.port}" if self._connection_info.port else ""
-        if urlparse(self._connection_info.host).scheme:
-            api_server_url = self._connection_info.host.replace("https://", "wss://")
-        else:
-            api_server_url = f"ws://{self._connection_info.host}"
-        return f"{api_server_url}{port}"
+        api_server_url = self._get_api_base_url().replace("http://", "ws://").replace("https://", "wss://")
+        return api_server_url
 
     async def list_kernel_specs(self) -> Dict[str, Dict[str, str]]:
         response = await self._http_client.get(
             f"{self._get_api_base_url()}/api/kernelspecs",
         )
+        response.raise_for_status()
         return cast(Dict[str, Dict[str, str]], response.json())
 
     async def list_kernels(self) -> List[Dict[str, str]]:
         response = await self._http_client.get(f"{self._get_api_base_url()}/api/kernels")
+        response.raise_for_status()
         return cast(List[Dict[str, str]], response.json())
 
     async def start_kernel(self, kernel_spec_name: str) -> str:
@@ -124,6 +113,7 @@ class PodJupyterClient:
             f"{self._get_api_base_url()}/api/kernels",
             json={"name": kernel_spec_name},
         )
+        response.raise_for_status()
         data = response.json()
         return cast(str, data["id"])
 
@@ -286,7 +276,7 @@ class PodJupyterServer(Component[PodJupyterServerConfig], ComponentBase[BaseMode
 
         if not re.fullmatch(r"^[a-z0-9](?:[a-z0-9-]{0,54})[a-z0-9]?$", self._pod_name):
             raise ValueError(
-                "Pod name validation failed: pod name must start and end with lower alphanumeric characters with length 57, "
+                "Pod name validation failed: pod name must start and end with lower alphanumeric characters with length 56, "
                 "and contain only lowercase alphanumeric or dash('-') characters."
             )
 
@@ -355,11 +345,20 @@ class PodJupyterServer(Component[PodJupyterServerConfig], ComponentBase[BaseMode
             self._secret = self._read_from_resource_spec("Secret", secret_spec)
             if "KG_AUTH_TOKEN" in self._secret["data"]:
                 self._token = base64.b64decode(self._secret["data"]["KG_AUTH_TOKEN"]).decode("utf-8")
+            elif "KG_AUTH_TOKEN" in self._secret["stringData"]:
+                self._token = self._secret["stringData"]["KG_AUTH_TOKEN"]
         if service_spec is not None:
             self._service = self._read_from_resource_spec("Service", service_spec)
+            has_jupyter_port = False
             for p in self._service["spec"]["ports"]:
                 if p["name"] == "jupyter":
                     self._port = p["port"]
+                    has_jupyter_port = True
+                    break
+            if not has_jupyter_port:
+                raise ValueError(
+                    "custom service should have a port named `jupyter`. add a port named `jupyter` in service_spec"
+                )
 
         self._running = False
 
@@ -409,7 +408,6 @@ class PodJupyterServer(Component[PodJupyterServerConfig], ComponentBase[BaseMode
                 V1EnvVar(name="KG_PORT", value=str(self._port)),
             ],
             ports=[V1ContainerPort(container_port=self._port, name="jupyter")],
-            # resources=V1ResourceRequirements(**self.DEFAULT_RESOURCES),
             working_dir=str(self._workspace_path),
         )
         if self._token:
@@ -463,27 +461,25 @@ class PodJupyterServer(Component[PodJupyterServerConfig], ComponentBase[BaseMode
     @property
     def connection_info(self) -> PodJupyterConnectionInfo:
         return PodJupyterConnectionInfo(
-            host=f"{self._service['metadata']['name']}.{self._service['metadata']['namespace']}",
+            host=f"{self._service['metadata']['name']}.{self._service['metadata']['namespace']}.svc.cluster.local",
             port=self._port,
             token=SecretStr(self._token) if self._token else None,
         )
 
-    async def remove(self) -> None:
-        for spec in [self._pod, self._secret, self._service]:
-            if spec is None:
-                continue
-            try:
-                await delete_namespaced_corev1_resource(self._kube_config, spec)
-            except HTTPStatusError:
-                pass
-
-        self._running = False
+    async def remove(self, spec: Optional[dict[str, Any]]) -> None:
+        if spec is None:
+            return
+        try:
+            await delete_namespaced_corev1_resource(self._kube_config, spec)
+        except HTTPStatusError:
+            pass
 
     async def stop(self) -> None:
-        await self.remove()
+        await asyncio.gather(*[self.remove(spec) for spec in (self._pod, self._secret, self._service)])
+        self._running = False
 
     async def start(self) -> None:
-        for spec in [self._pod, self._secret, self._service]:
+        for spec in [self._secret, self._pod, self._service]:
             if spec is None:
                 continue
             await create_namespaced_corev1_resource(self._kube_config, spec)
@@ -496,7 +492,7 @@ class PodJupyterServer(Component[PodJupyterServerConfig], ComponentBase[BaseMode
         )
 
         async def cleanup() -> None:
-            await self.remove()
+            await self.stop()
             asyncio_atexit.unregister(cleanup)  # type: ignore
 
         if self._auto_remove:

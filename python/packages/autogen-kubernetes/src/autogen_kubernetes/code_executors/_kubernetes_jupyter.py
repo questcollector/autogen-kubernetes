@@ -4,11 +4,13 @@ import json
 import os
 import tempfile
 import uuid
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from types import TracebackType
 from typing import List, Optional, Union
 
+import httpx
 from autogen_core import CancellationToken, Component
 from autogen_core.code_executor import CodeBlock, CodeExecutor, CodeResult
 from pydantic import BaseModel, ConfigDict
@@ -260,13 +262,34 @@ class PodJupyterCodeExecutor(CodeExecutor, Component[PodJupyterCodeExecutorConfi
             await self._async_jupyter_kernel_client.stop()
             self._async_jupyter_kernel_client = None
 
+    async def _wait_for_server(self) -> None:
+        while True:
+            try:
+                response = await self._jupyter_client.list_kernel_specs()
+                assert "kernelspecs" in response
+                break
+            except (
+                httpx.ConnectError,
+                httpx.HTTPStatusError,
+                AssertionError,
+                json.decoder.JSONDecodeError,
+            ):
+                await asyncio.sleep(1)
+
     async def start(self) -> None:
         """(Experimental) Start a new session."""
-        await self._jupyter_client.wait_for_service()
-        available_kernels = await self._jupyter_client.list_kernel_specs()
-        if self._kernel_name not in available_kernels["kernelspecs"]:
-            raise ValueError(f"Kernel {self._kernel_name} is not installed.")
-        self._kernel_id = await self._jupyter_client.start_kernel(self._kernel_name)
+        try:
+            await asyncio.wait_for(self._wait_for_server(), timeout=self._timeout)
+            available_kernels = await self._jupyter_client.list_kernel_specs()
+            if self._kernel_name not in available_kernels["kernelspecs"]:
+                raise ValueError(f"Kernel {self._kernel_name} is not installed.")
+            self._kernel_id = await self._jupyter_client.start_kernel(self._kernel_name)
+        except asyncio.TimeoutError:
+            warnings.warn(
+                f"jupyter server not accessible after connection tries for {self._timeout} seconds. close context.",
+                stacklevel=2,
+            )
+            raise
 
     def _save_image(self, image_data_base64: str) -> str:
         """Save image data to a file."""

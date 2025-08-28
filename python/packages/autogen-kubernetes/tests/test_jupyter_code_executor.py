@@ -22,7 +22,10 @@ def can_resolve_svc_fqdn() -> bool:
         return False
 
 
-@pytest.mark.skipif(not state_kubernetes_enabled or not can_resolve_svc_fqdn(), reason="kubernetes not accessible")
+@pytest.mark.skipif(
+    not state_kubernetes_enabled or not can_resolve_svc_fqdn(),
+    reason="kubernetes not accessible",
+)
 @pytest.mark.asyncio
 async def test_pod_default(generated_jupyter_pod_regex: str) -> None:
     async with PodJupyterServer() as jupyter_server:
@@ -38,7 +41,10 @@ async def test_pod_default(generated_jupyter_pod_regex: str) -> None:
             assert "Hello, World!" in code_result.output
 
 
-@pytest.mark.skipif(not state_kubernetes_enabled or not can_resolve_svc_fqdn(), reason="kubernetes not accessible")
+@pytest.mark.skipif(
+    not state_kubernetes_enabled or not can_resolve_svc_fqdn(),
+    reason="kubernetes not accessible",
+)
 @pytest.mark.asyncio
 async def test_pod_yaml_file() -> None:
     yaml_file_path = Path(os.path.dirname(__file__)) / Path("spec-files/test-jupyter.yaml")
@@ -55,7 +61,7 @@ async def test_pod_yaml_file() -> None:
                 ],
                 cancellation_token=CancellationToken(),
             )
-            assert jupyter_server.connection_info.host == "test-jupyter.default"
+            assert jupyter_server.connection_info.host == "test-jupyter.default.svc.cluster.local"
             assert jupyter_server.connection_info.port == 8888
             assert code_result.exit_code == 0
             assert "Hello, World!" in code_result.output
