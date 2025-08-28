@@ -169,19 +169,20 @@ class PodJupyterServerConfig(BaseModel):
 
     image: Optional[str] = None
     pod_name: Optional[str] = None
+    command: Optional[list[str]] = None
+    args: Optional[list[str]] = None
     timeout: int = 60
-    workspace_path: Union[Path, str] = "/workspace"
+    workspace_path: Union[Path, str] = Path("/workspace")
     namespace: str = "default"
     volume: Union[dict[str, Any], str, Path, Type[V1Volume], None] = None
     pod_spec: Union[dict[str, Any], str, Path, Type[V1Pod], None] = None
-    kube_config_file: Union[Path, str, None] = None
     auto_remove: bool = True
     port: int = DEFAULT_PORT
-    command: Optional[list[str]] = DEFAULT_COMMAND
     service_spec: Union[dict[str, Any], str, Path, Type[V1Service], None] = None
     token: Optional[SecretStr] = None
     secret_spec: Union[dict[str, Any], str, Path, Type[V1Secret], SecretStr, None] = None
-    """when secret spec is provided as SecretStr, It should be a dictionary format"""
+    """when secret spec is provided as SecretStr, It should be a json format"""
+    kube_config_file: Union[Path, str, None] = None
 
 
 class PodJupyterServer(Component[PodJupyterServerConfig], ComponentBase[BaseModel]):
@@ -199,7 +200,8 @@ class PodJupyterServer(Component[PodJupyterServerConfig], ComponentBase[BaseMode
         *,
         image: Optional[str] = None,
         pod_name: Optional[str] = None,
-        command: Optional[list[str]] = DEFAULT_COMMAND,
+        command: Optional[list[str]] = None,
+        args: Optional[list[str]] = None,
         timeout: int = 60,
         workspace_path: Union[Path, str] = "/workspace",
         namespace: str = "default",
@@ -218,6 +220,7 @@ class PodJupyterServer(Component[PodJupyterServerConfig], ComponentBase[BaseMode
             image (Optional[str], optional): jupyter server docker image. Defaults to None and converted to quay.io/jupyter/docker-stacks-foundation.
             pod_name (Optional[str], optional): jupyter server pod name. Defaults to None and will be converted to auto generated name.
             command (Optional[list[str]], optional): jupyter server container command. Defaults to DEFAULT_COMMAND.
+            args (Optional[list[str]], optional): jupyter server container argument. Defaults to None.
             timeout (int, optional): wait time in secondes for the pod to be running phase. Defaults to 60.
             workspace_path (str, optional): default workspace directory. Defaults to "/workspace".
             namespace (str, optional): namespace for jupyter server pod. Defaults to "default".
@@ -226,7 +229,7 @@ class PodJupyterServer(Component[PodJupyterServerConfig], ComponentBase[BaseMode
                 Must conform to the kubernetes `V1Volume` model format.
                 Must have appropriate access mode(such as ReadWriteMany, ReadWriteOnce, ReadWriteOncePod, in case of PersistentVolumeClaim)
                 If None, no volume attached to code executor pod. Defaults to None.
-            pod_spec (Union[dict[str, Any], str, Path, Type[V1Pod], None], optional): pod specification for jupyter server.
+            pod_spec (Union[dict[str, Any], str, Path, Type[V1Pod], None], optional): Custom pod specification for jupyter server.
                 Must contain a container which name is "autogen-executor" for execution for codes.
                 Supports the formats of a dictionary, a YAML/json string, a YAML file path, and a kubernetes V1Pod model.
                 Must conform to the kubernetes `V1Pod` model format.
@@ -236,22 +239,22 @@ class PodJupyterServer(Component[PodJupyterServerConfig], ComponentBase[BaseMode
                 container when remove is called, when the context manager exits or when
                 the Python process exits with atext. Defaults to True.
             port (int, optional): port number for jupyter server. Defaults to DEFAULT_PORT.
-            service_spec (Union[dict[str, Any], str, Path, Type[V1Service], None], optional): service specificatin for jupyter server.
+            service_spec (Union[dict[str, Any], str, Path, Type[V1Service], None], optional): Custom service specificatin for jupyter server.
                 Supports the formats of a dictionary, a YAML/json string, a YAML file path, and kubernetes `V1Service` model format.
                 Must conform to the kubernetes `V1Service` model format.
                 The first port should be the name `jupyter` otherwise PodJupyterClient cannot use the port.
                 It has priority than port parameter.
                 Defaults to None.
             token (Optional[Union[str, GenerateToken]], optional): token string. Defaults to None and will be converted to auto generated token.
-            secret_spec (Union[dict[str, Any], str, Path, Type[V1Secret], None], optional): secret specificatin for jupyter server.
+            secret_spec (Union[dict[str, Any], str, Path, Type[V1Secret], None], optional): Custom secret specificatin for jupyter server.
                 Supports the formats of a dictionary, a YAML/json string, a YAML file path, and kubernetes `V1Secret` model format.
                 Must conform to the kubernetes `V1Secret` model format.
                 It is possible to add data `KG_AUTH_TOKEN` to use custom authentication token for jupyter kernel gateway server.
                 It has priority than token parameter.
                 Defaults to None.
             kube_config_file (Union[Path, str, None], optional): kubernetes configuration file(kubeconfig) path.
-                If None, will use KUBECONFIG environment variables or service account token(incluster config).
-                Using service account token, service account must have at least those namespaced permissions below.
+                If None, will use `KUBECONFIG` environment variables or service account token(incluster config).
+                Service account must have at least those namespaced permissions below.
                 [
                 {
                     "resource": "pods", "verb": ["get", "create", "delete"]
@@ -304,7 +307,8 @@ class PodJupyterServer(Component[PodJupyterServerConfig], ComponentBase[BaseMode
         self._namespace = namespace
         self._timeout = timeout
         self._auto_remove = auto_remove
-        self._command = command
+        self._command = command or DEFAULT_COMMAND
+        self._args = args
         ## workspace
         if isinstance(workspace_path, str):  ## path string to Path
             workspace_path = Path(workspace_path)
@@ -390,6 +394,7 @@ class PodJupyterServer(Component[PodJupyterServerConfig], ComponentBase[BaseMode
         )
 
         executor_container = V1Container(
+            args=self._args,
             command=self._command,
             name=self._container_name,
             image=self._image,

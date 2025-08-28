@@ -13,6 +13,7 @@ from conftest import kubernetes_enabled, state_kubernetes_enabled
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
+
 def can_resolve_svc_fqdn() -> bool:
     try:
         socket.gethostbyname("kubernetes.default")
@@ -32,10 +33,7 @@ async def test_pod_default(generated_jupyter_pod_regex: str) -> None:
                 ],
                 cancellation_token=CancellationToken(),
             )
-            assert (
-                re.fullmatch(generated_jupyter_pod_regex, jupyter_server._pod_name)
-                is not None
-            )
+            assert re.fullmatch(generated_jupyter_pod_regex, jupyter_server._pod_name) is not None
             assert code_result.exit_code == 0
             assert "Hello, World!" in code_result.output
 
@@ -43,9 +41,7 @@ async def test_pod_default(generated_jupyter_pod_regex: str) -> None:
 @pytest.mark.skipif(not state_kubernetes_enabled or not can_resolve_svc_fqdn(), reason="kubernetes not accessible")
 @pytest.mark.asyncio
 async def test_pod_yaml_file() -> None:
-    yaml_file_path = Path(os.path.dirname(__file__)) / Path(
-        "spec-files/test-jupyter.yaml"
-    )
+    yaml_file_path = Path(os.path.dirname(__file__)) / Path("spec-files/test-jupyter.yaml")
 
     async with PodJupyterServer(
         pod_spec=yaml_file_path,
