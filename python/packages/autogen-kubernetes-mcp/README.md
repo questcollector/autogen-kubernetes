@@ -38,7 +38,9 @@ Command-line arguments are used when creating `PodCommandLineCodeExecutor`/`PodJ
 
 `type` arguments: jupyter type creates `PodJupyterCodeExecutor` for python code executor tool.
 
-MCP server have to run in same kubernetes cluster because `PodJupyterCodeExecutor` only works in incluster environment.
+MCP server have to run in same kubernetes cluster because `PodJupyterCodeExecutor` only uses service FQDN to connect jupyter server.
+
+Not validated for non-text outputs yet.
 
 ```mermaid
 flowchart LR

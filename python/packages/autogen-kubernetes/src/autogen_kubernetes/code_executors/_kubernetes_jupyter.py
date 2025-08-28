@@ -210,7 +210,7 @@ class PodJupyterCodeExecutor(CodeExecutor, Component[PodJupyterCodeExecutorConfi
             code_blocks (List[CodeBlock]): A list of code blocks to execute.
 
         Returns:
-            DockerJupyterCodeResult: The result of the code execution.
+            PodJupyterCodeResult: The result of the code execution.
         """
         kernel_client = await self._ensure_async_kernel_client()
         # Wait for kernel to be ready using async client
@@ -304,7 +304,7 @@ class PodJupyterCodeExecutor(CodeExecutor, Component[PodJupyterCodeExecutorConfi
         """Save html data to a file."""
         filename = f"{uuid.uuid4().hex}.html"
         path = os.path.join(str(self._output_dir), filename)
-        with open(path, "w") as f:
+        with open(path, "w", encoding="utf-8") as f:
             f.write(html_data)
         return os.path.abspath(path)
 
