@@ -77,12 +77,16 @@ else:
 
 A = ParamSpec("A")
 
+DEFAULT_COMMAND = ["/bin/sh", "-c", "while true;do sleep 5; done"]
+
 
 class PodCommandLineCodeExecutorConfig(BaseModel):
     """Configuration for PodCommandLineCodeExecutor"""
 
     image: str = "python:3-slim"
     pod_name: Optional[str] = None
+    command: Optional[list[str]] = None
+    args: Optional[list[str]] = None
     timeout: int = 60
     workspace_path: Union[Path, str] = "/workspace"
     namespace: str = "default"
@@ -109,6 +113,8 @@ class PodCommandLineCodeExecutor(CodeExecutor, Component[PodCommandLineCodeExecu
             Defaults to "python:3-slim".
         pod_name (Optional[str], optional): Name of the kubernetes pod
             which is created. If None, will autogenerate a name. Defaults to None.
+        command (Optional[list[str]], optional): container command. Defaults to DEFAULT_COMMAND.
+        args (Optional[list[str]], optional): container argument. Defaults to None.
         timeout (int, optional): The timeout for code execution. Defaults to 60.
         workspace_path (Union[Path, str], optional): The workspace directory for code executor container.
             Generated code script files will be stored in this directory.
@@ -120,14 +126,14 @@ class PodCommandLineCodeExecutor(CodeExecutor, Component[PodCommandLineCodeExecu
             Must conform to the kubernetes `V1Volume` model format.
             Must have appropriate access mode(such as ReadWriteMany, ReadWriteOnce, ReadWriteOncePod, in case of PersistentVolumeClaim)
             If None, no volume attached to code executor pod. Defaults to None.
-        pod_spec (Union[dict, str, Path, kubernetes.client.models.V1Pod, None], optional): pod specification for code executor.
+        pod_spec (Union[dict, str, Path, kubernetes.client.models.V1Pod, None], optional): Custom pod specification for code executor.
             Must contain a container which name is "autogen-executor" for execution for codes.
             Supports the formats of a dictionary, a YAML string, a YAML file path, and a kubernetes V1Pod model.
             Must conform to the kubernetes `V1Pod` model format.
             If None, will use above parameters to create code executor pod. Defaults to None.
         kube_config_file (Union[Path, str, None], optional): kubernetes configuration file(kubeconfig) path.
-            If None, will use KUBECONFIG environment variables or service account token(incluster config).
-            Using service account token, service account must have at least those namespaced permissions below.
+            If None, will use `KUBECONFIG` environment variables or service account token(incluster config).
+            Service account must have at least those namespaced permissions below.
             [
               {
                 "resource": "pods", "verb": ["get", "create", "delete"]
@@ -172,19 +178,13 @@ class PodCommandLineCodeExecutor(CodeExecutor, Component[PodCommandLineCodeExecu
         "ps1": "ps1",
     }
 
-    FUNCTION_PROMPT_TEMPLATE: ClassVar[
-        str
-    ] = """You have access to the following user defined functions. They can be accessed from the module called `$module_name` by their function names.
-
-For example, if there was a function called `foo` you could import it by writing `from $module_name import foo`
-
-$functions"""
-
     def __init__(
         self,
-        image: str = "python:3-slim",
-        pod_name: Optional[str] = None,
         *,
+        image: Optional[str] = None,
+        pod_name: Optional[str] = None,
+        command: Optional[list[str]] = None,
+        args: Optional[list[str]] = None,
         timeout: int = 60,
         workspace_path: Union[Path, str] = Path("/workspace"),
         namespace: str = "default",
@@ -260,7 +260,9 @@ $functions"""
         self._namespace = namespace
         self._timeout = timeout
         self._auto_remove = auto_remove
-        self._image = image
+        self._image = image or "python:3-slim"
+        self._command = command or DEFAULT_COMMAND
+        self._args = args
 
         ## pod_spec
         if isinstance(pod_spec, str):  # YAML file path string
@@ -378,8 +380,8 @@ $functions"""
         metadata = V1ObjectMeta(name=self._pod_name, namespace=self._namespace)
 
         executor_container = V1Container(
-            args=["-c", "while true;do sleep 5; done"],
-            command=["/bin/sh"],
+            args=self._args,
+            command=self._command,
             name=self._container_name,
             image=self._image,
             working_dir=str(self._workspace_path),
@@ -672,6 +674,8 @@ $functions"""
         return PodCommandLineCodeExecutorConfig(
             image=self._image,
             pod_name=self._pod_name,
+            command=self._command,
+            args=self._args,
             timeout=self._timeout,
             workspace_path=self._workspace_path,
             namespace=self._namespace,
@@ -689,6 +693,8 @@ $functions"""
         return cls(
             image=config.image,
             pod_name=config.pod_name,
+            command=config.command,
+            args=config.args,
             timeout=config.timeout,
             workspace_path=config.workspace_path,
             namespace=config.namespace,
