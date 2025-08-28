@@ -36,6 +36,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--volume", default=None)
     parser.add_argument("--pod-spec", default=None)
     parser.add_argument("--command", nargs="+", help="jupyter server pod commands", default=None)
+    parser.add_argument("--args", nargs="+", help="jupyter server pod arguments", default=None)
 
     return parser
 
