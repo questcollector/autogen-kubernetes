@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import datetime
 import functools
 import inspect
 import json
@@ -32,7 +33,7 @@ import kubernetes.client
 import yaml
 from autogen_core.code_executor import CodeResult
 from typing_extensions import ParamSpec
-from websockets.asyncio.client import connect
+from websockets.asyncio.client import ClientConnection, connect
 from websockets.exceptions import ConnectionClosed
 from websockets.typing import Subprotocol
 
@@ -57,13 +58,32 @@ class HttpStatusCode(IntEnum):
 POD_NAME_PATTERN = r"^[a-z0-9](?:[a-z0-9-]{0,61})[a-z0-9]?$"
 
 
-def clean_none_value(data: Any) -> Any:
-    if isinstance(data, dict):
-        return {k: clean_none_value(v) for k, v in data.items() if v is not None}
-    elif isinstance(data, list):
-        return [clean_none_value(x) for x in data if x is not None]
+# Source below based from: https://github.com/kubernetes-client/python/blob/master/kubernetes/client/api_client.py
+# Credit to original authors
+# Original code Licensed under the Apache-2.0 license
+# See the License file for the full license text.
+def sanitize_for_serialization(obj: Any) -> Any:
+    if obj is None:
+        return None
+    elif isinstance(obj, (float, bool, bytes, str, int)):
+        return obj
+    elif isinstance(obj, list):
+        return [sanitize_for_serialization(sub_obj) for sub_obj in obj]
+    elif isinstance(obj, tuple):
+        return tuple(sanitize_for_serialization(sub_obj) for sub_obj in obj)
+    elif isinstance(obj, (datetime.datetime, datetime.date)):
+        return obj.isoformat
+
+    if isinstance(obj, dict):
+        obj_dict = obj
     else:
-        return data
+        obj_dict = {
+            obj.attribute_map[attr]: getattr(obj, attr)
+            for attr, _ in obj.openapi_types.items()
+            if getattr(obj, attr) is not None
+        }
+
+    return {key: sanitize_for_serialization(val) for key, val in obj_dict.items()}
 
 
 async def wait_for_ready(
@@ -207,10 +227,8 @@ async def get_pod_logs(
             response.raise_for_status()
 
 
-async def create_pod(
-    kube_config: Any,
-    pod_spec: dict[str, Any],
-    dry_run: bool = False,
+async def create_namespaced_corev1_resource(
+    kube_config: Any, resource_spec: dict[str, Any], dry_run: bool = False
 ) -> Any:
     api_server_url = kube_config.host
     ssl_context, headers = _create_ssl_context_and_headers(kube_config)
@@ -221,13 +239,14 @@ async def create_pod(
         }
     )
 
-    namespace = pod_spec["metadata"]["namespace"]
-    url = f"{api_server_url}/api/v1/namespaces/{namespace}/pods"
+    namespace = resource_spec["metadata"]["namespace"]
+    kind = str(resource_spec["kind"]).lower() + "s"
+    url = f"{api_server_url}/api/v1/namespaces/{namespace}/{kind}"
     if dry_run:
         url += "?dryRun=All"
 
     async with httpx.AsyncClient(verify=ssl_context) as httpx_client:
-        response = await httpx_client.post(url, headers=headers, json=pod_spec)
+        response = await httpx_client.post(url, headers=headers, json=resource_spec)
         if response.status_code == HttpStatusCode.CREATED:
             return response.json()
         else:
@@ -235,12 +254,16 @@ async def create_pod(
             response.raise_for_status()
 
 
-async def delete_pod(kube_config: Any, pod_name: str, namespace: str) -> Any:
+async def delete_namespaced_corev1_resource(kube_config: Any, resource: dict[str, Any]) -> Any:
     api_server_url = kube_config.host
     ssl_context, headers = _create_ssl_context_and_headers(kube_config)
     headers.update({"Accept": "application/json"})
 
-    url = f"{api_server_url}/api/v1/namespaces/{namespace}/pods/{pod_name}"
+    kind = resource["kind"]
+    name = resource["metadata"]["name"]
+    namespace = resource["metadata"]["namespace"]
+
+    url = f"{api_server_url}/api/v1/namespaces/{namespace}/{kind.lower() + 's'}/{name}"
 
     async with httpx.AsyncClient(verify=ssl_context) as httpx_client:
         response = await httpx_client.delete(url, headers=headers)

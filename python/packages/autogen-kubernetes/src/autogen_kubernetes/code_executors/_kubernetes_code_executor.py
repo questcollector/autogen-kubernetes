@@ -58,13 +58,13 @@ from ._utils import (
     POD_NAME_PATTERN,
     CommandLineCodeResult,
     StreamChannel,
-    clean_none_value,
-    create_pod,
-    delete_pod,
+    create_namespaced_corev1_resource,
+    delete_namespaced_corev1_resource,
     get_file_name_from_content,
     get_pod_logs,
     lang_to_cmd,
     pod_exec_stream,
+    sanitize_for_serialization,
     silence_pip,
     wait_for_ready,
 )
@@ -77,12 +77,16 @@ else:
 
 A = ParamSpec("A")
 
+DEFAULT_COMMAND = ["/bin/sh", "-c", "while true;do sleep 5; done"]
+
 
 class PodCommandLineCodeExecutorConfig(BaseModel):
     """Configuration for PodCommandLineCodeExecutor"""
 
     image: str = "python:3-slim"
     pod_name: Optional[str] = None
+    command: Optional[list[str]] = None
+    args: Optional[list[str]] = None
     timeout: int = 60
     workspace_path: Union[Path, str] = "/workspace"
     namespace: str = "default"
@@ -109,6 +113,8 @@ class PodCommandLineCodeExecutor(CodeExecutor, Component[PodCommandLineCodeExecu
             Defaults to "python:3-slim".
         pod_name (Optional[str], optional): Name of the kubernetes pod
             which is created. If None, will autogenerate a name. Defaults to None.
+        command (Optional[list[str]], optional): container command. Defaults to DEFAULT_COMMAND.
+        args (Optional[list[str]], optional): container argument. Defaults to None.
         timeout (int, optional): The timeout for code execution. Defaults to 60.
         workspace_path (Union[Path, str], optional): The workspace directory for code executor container.
             Generated code script files will be stored in this directory.
@@ -120,14 +126,14 @@ class PodCommandLineCodeExecutor(CodeExecutor, Component[PodCommandLineCodeExecu
             Must conform to the kubernetes `V1Volume` model format.
             Must have appropriate access mode(such as ReadWriteMany, ReadWriteOnce, ReadWriteOncePod, in case of PersistentVolumeClaim)
             If None, no volume attached to code executor pod. Defaults to None.
-        pod_spec (Union[dict, str, Path, kubernetes.client.models.V1Pod, None], optional): pod specification for code executor.
+        pod_spec (Union[dict, str, Path, kubernetes.client.models.V1Pod, None], optional): Custom pod specification for code executor.
             Must contain a container which name is "autogen-executor" for execution for codes.
             Supports the formats of a dictionary, a YAML string, a YAML file path, and a kubernetes V1Pod model.
             Must conform to the kubernetes `V1Pod` model format.
             If None, will use above parameters to create code executor pod. Defaults to None.
         kube_config_file (Union[Path, str, None], optional): kubernetes configuration file(kubeconfig) path.
-            If None, will use KUBECONFIG environment variables or service account token(incluster config).
-            Using service account token, service account must have at least those namespaced permissions below.
+            If None, will use `KUBECONFIG` environment variables or service account token(incluster config).
+            Service account must have at least those namespaced permissions below.
             [
               {
                 "resource": "pods", "verb": ["get", "create", "delete"]
@@ -172,19 +178,13 @@ class PodCommandLineCodeExecutor(CodeExecutor, Component[PodCommandLineCodeExecu
         "ps1": "ps1",
     }
 
-    FUNCTION_PROMPT_TEMPLATE: ClassVar[
-        str
-    ] = """You have access to the following user defined functions. They can be accessed from the module called `$module_name` by their function names.
-
-For example, if there was a function called `foo` you could import it by writing `from $module_name import foo`
-
-$functions"""
-
     def __init__(
         self,
-        image: str = "python:3-slim",
-        pod_name: Optional[str] = None,
         *,
+        image: Optional[str] = None,
+        pod_name: Optional[str] = None,
+        command: Optional[list[str]] = None,
+        args: Optional[list[str]] = None,
         timeout: int = 60,
         workspace_path: Union[Path, str] = Path("/workspace"),
         namespace: str = "default",
@@ -238,7 +238,7 @@ $functions"""
         elif isinstance(volume, str):  # YAML string to dict
             volume_json = yaml.safe_load(volume)
         elif isinstance(volume, V1Volume):
-            volume_json = clean_none_value(dict(volume.to_dict()))
+            volume_json = sanitize_for_serialization(volume)
         elif isinstance(volume, dict):
             volume_json = volume
 
@@ -260,7 +260,9 @@ $functions"""
         self._namespace = namespace
         self._timeout = timeout
         self._auto_remove = auto_remove
-        self._image = image
+        self._image = image or "python:3-slim"
+        self._command = command or DEFAULT_COMMAND
+        self._args = args
 
         ## pod_spec
         if isinstance(pod_spec, str):  # YAML file path string
@@ -276,7 +278,7 @@ $functions"""
         elif isinstance(pod_spec, str):  # YAML string to dict
             pod_spec_dict = yaml.safe_load(pod_spec)
         elif isinstance(pod_spec, V1Pod):
-            pod_spec_dict = clean_none_value(dict(pod_spec.to_dict()))
+            pod_spec_dict = sanitize_for_serialization(pod_spec)
         elif isinstance(pod_spec, dict):
             pod_spec_dict = pod_spec
 
@@ -303,7 +305,8 @@ $functions"""
         self._running = False
 
     def _merge_with_default_pod_spec(self, pod_spec_dict: dict[str, Any]) -> dict[str, Any]:
-        clean_pod_spec_dict: dict[str, Any] = clean_none_value(pod_spec_dict)
+        clean_pod_spec_dict: dict[str, Any] = sanitize_for_serialization(pod_spec_dict)
+        clean_pod_spec_dict["kind"] = "Pod"
         default_pod_spec = self._define_pod_spec()
         if "metadata" not in clean_pod_spec_dict:
             clean_pod_spec_dict |= {"metadata": default_pod_spec["metadata"]}
@@ -315,17 +318,14 @@ $functions"""
         if "spec" not in clean_pod_spec_dict:
             clean_pod_spec_dict |= {"spec": default_pod_spec["spec"]}
 
-        if (
-            "automountServiceAccountToken" not in clean_pod_spec_dict["spec"]
-            or "automount_service_account_token" not in clean_pod_spec_dict["spec"]
-        ):
+        if "automountServiceAccountToken" not in clean_pod_spec_dict["spec"]:
             clean_pod_spec_dict["spec"] |= {
-                "automount_service_account_token": default_pod_spec["spec"]["automount_service_account_token"]
+                "automountServiceAccountToken": default_pod_spec["spec"]["automountServiceAccountToken"]
             }
         if "containers" not in clean_pod_spec_dict["spec"]:
             clean_pod_spec_dict["spec"] |= {"containers": default_pod_spec["spec"]["containers"]}
-        if "restart_policy" not in clean_pod_spec_dict["spec"] or "restartPolicy" not in clean_pod_spec_dict["spec"]:
-            clean_pod_spec_dict["spec"] |= {"restart_policy": default_pod_spec["spec"]["restart_policy"]}
+        if "restartPolicy" not in clean_pod_spec_dict["spec"]:
+            clean_pod_spec_dict["spec"] |= {"restartPolicy": default_pod_spec["spec"]["restartPolicy"]}
         has_executor_pod = False
         for container in clean_pod_spec_dict["spec"]["containers"]:
             if container["name"] == "autogen-executor":
@@ -376,14 +376,15 @@ $functions"""
             raise e from e
 
     def _define_pod_spec(self) -> Any:
-        pod = V1Pod()
+        pod = V1Pod(kind="Pod")
         metadata = V1ObjectMeta(name=self._pod_name, namespace=self._namespace)
 
         executor_container = V1Container(
-            args=["-c", "while true;do sleep 5; done"],
-            command=["/bin/sh"],
+            args=self._args,
+            command=self._command,
             name=self._container_name,
             image=self._image,
+            working_dir=str(self._workspace_path),
         )
         pod_spec = V1PodSpec(restart_policy="Never", containers=[executor_container])
         pod_spec.automount_service_account_token = False
@@ -391,7 +392,7 @@ $functions"""
         pod.metadata = metadata
         pod.spec = pod_spec
 
-        pod_manifest: Dict[str, Any] = clean_none_value(dict(pod.to_dict()))  # type: ignore
+        pod_manifest: Dict[str, Any] = sanitize_for_serialization(pod)  # type: ignore
 
         if self._volume is not None:
             # add volume
@@ -605,10 +606,9 @@ $functions"""
 
     async def remove(self) -> None:
         try:
-            await delete_pod(
+            await delete_namespaced_corev1_resource(
                 self._kube_config,
-                self._pod["metadata"]["name"],
-                self._pod["metadata"]["namespace"],
+                self._pod,
             )
         except HTTPStatusError:
             pass
@@ -619,7 +619,7 @@ $functions"""
         await self.remove()
 
     async def start(self) -> None:
-        self._pod = await create_pod(self._kube_config, self._pod)
+        self._pod = await create_namespaced_corev1_resource(self._kube_config, self._pod)
 
         self._pod = await wait_for_ready(
             self._kube_config,
@@ -674,6 +674,8 @@ $functions"""
         return PodCommandLineCodeExecutorConfig(
             image=self._image,
             pod_name=self._pod_name,
+            command=self._command,
+            args=self._args,
             timeout=self._timeout,
             workspace_path=self._workspace_path,
             namespace=self._namespace,
@@ -691,6 +693,8 @@ $functions"""
         return cls(
             image=config.image,
             pod_name=config.pod_name,
+            command=config.command,
+            args=config.args,
             timeout=config.timeout,
             workspace_path=config.workspace_path,
             namespace=config.namespace,
