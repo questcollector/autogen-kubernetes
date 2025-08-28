@@ -420,6 +420,63 @@ async with PodCommandLineCodeExecutor(functions=[test_function]) as executor:
 CommandLineCodeResult(exit_code=0, output='kube_config_path not provided and default location (~/.kube/config) does not exist. Using inCluster Config. This might not work.\nTrue\n', code_file='/workspace/tmp_code_c61a3c1e421357bd54041ad195e242d8205b86a3a4a0778b8e2684bc373aac22.py')
 ```
 
+### PodJupyterServer
+
+- Creates a Jupyter Server Pod using `jupyter-kernel-gateway`, along with the required token secret and service resources.
+- Similar to `PodCommandLineCodeExecutor`, the `service_spec`, and `secret_spec` can be customized in multiple formats: Python dictionary, YAML/json string, YAML/json file path, or Kubernetes client model.
+- When used with default arguments, it runs on the `quay.io/jupyter/docker-stacks-foundation` image with `jupyter-kernel-gateway` and `ipykernal` installed, and executes via `jupyter-kernel-gateway`. For efficiency in production, building a custom image is recommended. Below is the sample Dockerfile
+
+```Dockerfile
+FROM quay.io/jupyter/docker-stacks-foundation
+
+RUN mamba install --yes jupyter_kernel_gateway ipykernel && \
+    mamba clean --all -f -y && \
+    fix-permissions "${CONDA_DIR}" && \
+    fix-permissions "/home/${NB_USER}"
+CMD python -m jupyter kernelgateway --KernelGatewayApp.ip=0.0.0.0 \
+        --JupyterApp.answer_yes=true \
+        --JupyterWebsocketPersonality.list_kernels=true
+```
+
+### PodJupyterCodeExecutor
+
+- A `CodeExecutor` that leverages PodJupyterServer and the jupyter-kernel-gateway server to executor code statefully and retrieve results
+- When used together with PodJupyterServer,note that the server generates PodJupyterConnectionInfo based on the service FQDN. This means it cannot be directly used in a non-incluster environment.
+  - After creating the PodJupyterServer, you must construct and provide PodJupyterConnectionInfo so that PodJupyterCodeExecutor can access it properly.
+
+Using with PodJupyterServer
+```python
+async with PodJupyeterServer() as jupyter_server:
+    async with PodJupyterCodeExecutor(jupyter_server) as executor:
+        code_result = await executor.execute_code_blocks(
+            code_blocks=[
+                CodeBlock(language="python", code="print('Hello, World!')"),
+            ],
+            cancellation_token=CancellationToken(),
+        )
+        print(code_result)
+```
+
+Using custom PodJupyterConnectionInfo
+```python
+async with PodJupyeterServer() as jupyter_server:
+    # connection info for created jupyter server pod
+    connection_info = PodJupyetrConnectionInfo(
+        host="https://jupyter-server/access/path",
+        port="443",
+        token=SecretStr("token-string")
+    )
+    async with PodJupyterCodeExecutor(connection_info) as executor:
+        code_result = await executor.execute_code_blocks(
+            code_blocks=[
+                CodeBlock(language="python", code="print('Hello, World!')"),
+            ],
+            cancellation_token=CancellationToken(),
+        )
+        print(code_result)
+```
+
+- Even without using PodJupyterServer, you can configure a custom Jupyter server that meets the required conditions and provide PodJupyterConnectionInfo for PodJupyterCodeExecutor to work with
 
 ## Contribute
 
