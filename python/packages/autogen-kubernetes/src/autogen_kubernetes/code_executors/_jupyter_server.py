@@ -197,7 +197,7 @@ class PodJupyterServer(Component[PodJupyterServerConfig], ComponentBase[BaseMode
         *,
         image: Optional[str] = None,
         pod_name: Optional[str] = None,
-        command: Optional[list[str]] = None,
+        command: Optional[list[str]] = DEFAULT_COMMAND,
         args: Optional[list[str]] = None,
         timeout: int = 60,
         workspace_path: Union[Path, str] = "/workspace",
@@ -304,7 +304,7 @@ class PodJupyterServer(Component[PodJupyterServerConfig], ComponentBase[BaseMode
         self._namespace = namespace
         self._timeout = timeout
         self._auto_remove = auto_remove
-        self._command = command or DEFAULT_COMMAND
+        self._command = command
         self._args = args
         ## workspace
         if isinstance(workspace_path, str):  ## path string to Path
@@ -553,6 +553,7 @@ class PodJupyterServer(Component[PodJupyterServerConfig], ComponentBase[BaseMode
             image=config.image,
             pod_name=config.pod_name,
             command=config.command,
+            args=config.args,
             timeout=config.timeout,
             workspace_path=config.workspace_path,
             namespace=config.namespace,
