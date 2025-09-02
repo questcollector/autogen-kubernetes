@@ -2,7 +2,7 @@ import argparse
 import asyncio
 import uuid
 from contextlib import asynccontextmanager
-from typing import Any, AsyncIterator, TypedDict
+from typing import Any, AsyncIterator, Optional, TypedDict
 
 from autogen_core import CancellationToken
 from mcp.server.fastmcp import Context, FastMCP
@@ -16,6 +16,11 @@ STATELESS_DESCRIPTION = r"""Use this tool to execute Python code in your chain o
 When you send a message containing python code to python, it will be executed in a stateless docker container, and the stdout of that process will be returned to you."""
 
 sessions: dict[str, list[Any]] = {}
+
+
+def split_str(val: str) -> Optional[list[str]]:
+    args = val.split()
+    return args if args else None
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -35,8 +40,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("-n", "--namespace", default="default")
     parser.add_argument("--volume", default=None)
     parser.add_argument("--pod-spec", default=None)
-    parser.add_argument("--command", nargs="+", help="jupyter server pod commands", default=None)
-    parser.add_argument("--args", nargs="+", help="jupyter server pod arguments", default=None)
+    parser.add_argument(
+        "--command",
+        type=split_str,
+        help="jupyter server pod commands (in single string)",
+        default=None,
+    )
+    parser.add_argument(
+        "--args",
+        type=split_str,
+        help="jupyter server pod arguments (in single string)",
+        default=None,
+    )
 
     return parser
 
