@@ -4,7 +4,6 @@ import datetime
 import json
 import re
 import secrets
-import time
 import uuid
 import warnings
 from dataclasses import dataclass
@@ -15,11 +14,9 @@ from typing import (
     Dict,
     List,
     Optional,
-    Protocol,
     Type,
     Union,
     cast,
-    runtime_checkable,
 )
 from urllib.parse import urlparse
 
@@ -35,7 +32,6 @@ from kubernetes.client.models import (
     V1ContainerPort,
     V1EnvFromSource,
     V1EnvVar,
-    V1EnvVarSource,
     V1ObjectMeta,
     V1Pod,
     V1PodSpec,
@@ -339,26 +335,26 @@ class PodJupyterServer(Component[PodJupyterServerConfig], ComponentBase[BaseMode
         self._secret: Optional[dict[str, Any]] = None
         self._define_resources_spec()
 
-        if pod_spec is not None:
-            self._pod = self._read_from_resource_spec("Pod", pod_spec)
         if secret_spec is not None:
-            self._secret = self._read_from_resource_spec("Secret", secret_spec)
-            if "KG_AUTH_TOKEN" in self._secret["data"]:
-                self._token = base64.b64decode(self._secret["data"]["KG_AUTH_TOKEN"]).decode("utf-8")
-            elif "KG_AUTH_TOKEN" in self._secret["stringData"]:
-                self._token = self._secret["stringData"]["KG_AUTH_TOKEN"]
-        if service_spec is not None:
-            self._service = self._read_from_resource_spec("Service", service_spec)
-            has_jupyter_port = False
-            for p in self._service["spec"]["ports"]:
-                if p["name"] == "jupyter":
-                    self._port = p["port"]
-                    has_jupyter_port = True
-                    break
-            if not has_jupyter_port:
-                raise ValueError(
-                    "custom service should have a port named `jupyter`. add a port named `jupyter` in service_spec"
+            manifest_from_secret_spec = self._read_from_resource_spec("Secret", secret_spec)
+            if "data" in manifest_from_secret_spec and "KG_AUTH_TOKEN" in manifest_from_secret_spec["data"]:
+                self._token = base64.b64decode(manifest_from_secret_spec["data"]["KG_AUTH_TOKEN"]).decode("utf-8")
+                self._secret = manifest_from_secret_spec
+            elif (
+                "stringData" in manifest_from_secret_spec and "KG_AUTH_TOKEN" in manifest_from_secret_spec["stringData"]
+            ):
+                self._token = manifest_from_secret_spec["stringData"]["KG_AUTH_TOKEN"]
+                self._secret = manifest_from_secret_spec
+            else:
+                warnings.warn(
+                    "Secret spec has no data or stringData for KG_AUTH_TOKEN. Will use the token parameter or auto generated token."
                 )
+        if pod_spec is not None:
+            manifest_from_pod_spec = self._read_from_resource_spec("Pod", pod_spec)
+            self._pod = self._merge_default_pod(manifest_from_pod_spec)
+        if service_spec is not None:
+            manifest_from_service_spec = self._read_from_resource_spec("Service", service_spec)
+            self._service = self._merge_default_service(manifest_from_service_spec)
 
         self._running = False
 
@@ -457,6 +453,128 @@ class PodJupyterServer(Component[PodJupyterServerConfig], ComponentBase[BaseMode
             ),
         )
         self._service = sanitize_for_serialization(service)
+
+    def _merge_default_pod(self, spec: dict[str, Any]) -> dict[str, Any]:
+        if "metadata" not in spec:
+            spec["metadata"] = self._pod["metadata"]
+        if "name" not in spec["metadata"]:
+            spec["metadata"]["name"] = self._pod["metadata"]["name"]
+        if "namespace" not in spec["metadata"]:
+            spec["metadata"]["namespace"] = self._pod["metadata"]["namespace"]
+        if "labels" not in spec["metadata"]:
+            spec["metadata"]["labels"] = self._pod["metadata"]["labels"]
+        if "autogen-kubernetes/jupyter-server" not in spec["metadata"]["labels"]:
+            spec["metadata"]["labels"]["autogen-kubernetes/jupyter-server"] = self._pod_name
+
+        if "spec" not in spec:
+            spec["spec"] = self._pod["spec"]
+        if "containers" not in spec["spec"]:
+            spec["spec"]["containers"] = self._pod["spec"]["containers"]
+        has_executor_container = False
+        executor_container = self._pod["spec"]["containers"][0]
+        for c in spec["spec"]["containers"]:
+            if c.get("name", "") == self._container_name:
+                has_executor_container = True
+                if "image" not in c:
+                    c["image"] = executor_container["image"]
+                if "ports" not in c:
+                    c["ports"] = executor_container["ports"]
+                else:
+                    has_jupyter_port = False
+                    for p in c["ports"]:
+                        if p.get("name", "") == "jupyter":
+                            has_jupyter_port = True
+                            break
+                    if not has_jupyter_port:
+                        c["ports"].extend(executor_container["ports"])
+                if "env" not in c:
+                    c["env"] = executor_container["env"]
+                else:
+                    has_kg_port = False
+                    for e in c["env"]:
+                        if e.get("name", "") == "KG_PORT":
+                            has_kg_port = True
+                            break
+                    if not has_kg_port:
+                        c["env"].extend(executor_container["env"])
+                if "workingDir" not in c:
+                    c["workingDir"] = executor_container["workingDir"]
+                if self._secret is not None:
+                    if "envFrom" not in c:
+                        c["envFrom"] = executor_container["envFrom"]
+                    else:
+                        has_secret_ref = False
+                        for ef in c["envFrom"]:
+                            if (
+                                "secretRef" in ef
+                                and ef["secretRef"].get("name", "") == self._secret["metadata"]["name"]
+                            ):
+                                has_secret_ref = True
+                                break
+                        if not has_secret_ref:
+                            c["envFrom"].append(executor_container["envFrom"][0])
+                if self._volume is not None:
+                    if "volumeMounts" not in c:
+                        c["volumeMounts"] = executor_container["volumeMounts"]
+                    else:
+                        has_volume_mount = False
+                        for vm in c["volumeMounts"]:
+                            if vm.get("name", "") == self._volume["name"]:
+                                has_volume_mount = True
+                                break
+                        if not has_volume_mount:
+                            c["volumeMounts"].append(executor_container["volumeMounts"][0])
+        if not has_executor_container:
+            if self._secret is not None:
+                executor_container["envFrom"] = [{"secretRef": {"name": self._secret["metadata"]["name"]}}]
+            if self._volume:
+                executor_container["volumeMounts"] = [
+                    {"mountPath": executor_container["workingDir"], "name": self._volume["name"]}
+                ]
+            self._pod["spec"]["containers"].append(executor_container)
+        if "volumes" not in spec["spec"] and self._pod["spec"]["volumes"] is not None:
+            spec["spec"]["volumes"] = self._pod["spec"]["volumes"]
+        elif "volumes" in spec["spec"] and self._pod["spec"]["volumes"] is not None:
+            has_volume = False
+            for v in spec["spec"]["volumes"]:
+                if v.get("name", "") == self._pod["spec"]["volumes"][0]["name"]:
+                    has_volume = True
+                    break
+            if not has_volume:
+                spec["spec"]["volumes"].append(self._pod["spec"]["volumes"][0])
+        if "automountServiceAccountToken" not in spec["spec"]:
+            spec["spec"]["automountServiceAccountToken"] = False
+        return spec
+
+    def _merge_default_service(self, spec: dict[str, Any]) -> dict[str, Any]:
+        if "metadata" not in spec:
+            spec["metadata"] = self._service["metadata"]
+        if "name" not in spec["metadata"]:
+            spec["metadata"]["name"] = self._service["metadata"]["name"]
+        if "namespace" not in spec["metadata"]:
+            spec["metadata"]["namespace"] = self._service["metadata"]["namespace"]
+        if "labels" not in spec["metadata"]:
+            spec["metadata"]["labels"] = self._service["metadata"]["labels"]
+        if "autogen-kubernetes/jupyter-server" not in spec["metadata"]["labels"]:
+            spec["metadata"]["labels"]["autogen-kubernetes/jupyter-server"] = self._pod_name
+
+        if "spec" not in spec:
+            spec["spec"] = self._service["spec"]
+        if "type" not in spec["spec"]:
+            spec["spec"]["type"] = self._service["spec"]["type"]
+        if "selector" not in spec["spec"]:
+            spec["spec"]["selector"] = self._pod["metadata"]["labels"]
+        if "ports" not in spec["spec"]:
+            spec["spec"]["ports"] = self._service["spec"]["ports"]
+        else:
+            has_jupyter_port = False
+            for p in spec["spec"]["ports"]:
+                if p.get("name", "") == "jupyter":
+                    has_jupyter_port = True
+                    break
+            if not has_jupyter_port:
+                spec["spec"]["ports"].extend(self._service["spec"]["ports"])
+        return spec
 
     @property
     def connection_info(self) -> PodJupyterConnectionInfo:
