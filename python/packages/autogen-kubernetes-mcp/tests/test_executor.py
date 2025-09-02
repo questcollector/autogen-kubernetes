@@ -6,6 +6,7 @@ from autogen_kubernetes.code_executors import (
     PodCommandLineCodeExecutor,
     PodJupyterCodeExecutor,
 )
+from autogen_kubernetes.code_executors._jupyter_server import DEFAULT_COMMAND
 from autogen_kubernetes_mcp._executor import make_executor, run_code
 from conftest import kubernetes_enabled, state_kubernetes_enabled
 
@@ -33,7 +34,7 @@ async def test_vanilla_commandline_executor() -> None:
 @pytest.mark.skipif(not state_kubernetes_enabled or not can_resolve_svc_fqdn(), reason="kubernetes not accessible")
 @pytest.mark.asyncio
 async def test_vanilla_jupyter_executor() -> None:
-    instances = await make_executor({"type": "jupyter"})
+    instances = await make_executor({"type": "jupyter", "command": DEFAULT_COMMAND})
     executor = instances[0]
     assert isinstance(executor, PodJupyterCodeExecutor)
     result = await run_code(executor, 'print("Hello")', CancellationToken())
