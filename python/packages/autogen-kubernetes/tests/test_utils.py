@@ -5,6 +5,7 @@ from autogen_kubernetes.code_executors._utils import (
     StreamChannel,
     create_namespaced_corev1_resource,
     delete_namespaced_corev1_resource,
+    get_namespaced_corev1_resource,
     get_pod_logs,
     pod_exec_stream,
     sanitize_for_serialization,
@@ -38,6 +39,18 @@ async def test_create_pod(kubeconfig: Any, pod_spec: Callable[[str], dict[str, A
     pod = await create_namespaced_corev1_resource(kubeconfig, create_pod_spec, dry_run=True)
 
     assert pod["metadata"]["name"] == "test-create"
+    assert len(pod["spec"]["containers"]) == 1
+
+
+@pytest.mark.skipif(not state_kubernetes_enabled, reason="kubernetes not accessible")
+@pytest.mark.asyncio
+async def test_get_pod(kubeconfig: Any, pod_spec: Callable[[str], dict[str, Any]]) -> None:
+    create_pod_spec = pod_spec("test-get")
+    pod = await create_namespaced_corev1_resource(kubeconfig, create_pod_spec, dry_run=False)
+    read_pod = await get_namespaced_corev1_resource(kubeconfig, pod)
+    await delete_namespaced_corev1_resource(kubeconfig, read_pod)
+
+    assert pod["metadata"]["name"] == "test-get"
     assert len(pod["spec"]["containers"]) == 1
 
 
