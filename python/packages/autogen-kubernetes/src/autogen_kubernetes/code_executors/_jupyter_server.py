@@ -50,6 +50,7 @@ from websockets.asyncio.client import ClientConnection, connect
 from ._utils import (
     create_namespaced_corev1_resource,
     delete_namespaced_corev1_resource,
+    get_namespaced_corev1_resource,
     get_pod_logs,
     sanitize_for_serialization,
     wait_for_ready,
@@ -530,7 +531,10 @@ class PodJupyterServer(Component[PodJupyterServerConfig], ComponentBase[BaseMode
                 executor_container["envFrom"] = [{"secretRef": {"name": self._secret["metadata"]["name"]}}]
             if self._volume:
                 executor_container["volumeMounts"] = [
-                    {"mountPath": executor_container["workingDir"], "name": self._volume["name"]}
+                    {
+                        "mountPath": executor_container["workingDir"],
+                        "name": self._volume["name"],
+                    }
                 ]
             self._pod["spec"]["containers"].append(executor_container)
         if self._volume:
@@ -586,7 +590,7 @@ class PodJupyterServer(Component[PodJupyterServerConfig], ComponentBase[BaseMode
             token=SecretStr(self._token) if self._token else None,
         )
 
-    async def remove(self, spec: Optional[dict[str, Any]]) -> None:
+    async def _remove_resource(self, spec: Optional[dict[str, Any]]) -> None:
         if spec is None:
             return
         try:
@@ -595,14 +599,32 @@ class PodJupyterServer(Component[PodJupyterServerConfig], ComponentBase[BaseMode
             pass
 
     async def stop(self) -> None:
-        await asyncio.gather(*[self.remove(spec) for spec in (self._pod, self._secret, self._service)])
+        await asyncio.gather(*[self._remove_resource(spec) for spec in (self._pod, self._secret, self._service)])
         self._running = False
 
+    async def _create_or_get_resource(self, spec: dict[str, Any] | None) -> dict[str, Any] | None:
+        if spec is None:
+            return None
+        resource: dict[str, Any] = await get_namespaced_corev1_resource(self._kube_config, spec)
+        if not resource:
+            resource = await create_namespaced_corev1_resource(self._kube_config, spec)
+
+        return resource
+
     async def start(self) -> None:
-        for spec in [self._secret, self._pod, self._service]:
-            if spec is None:
-                continue
-            await create_namespaced_corev1_resource(self._kube_config, spec)
+        self._secret = await self._create_or_get_resource(self._secret)
+        if self._secret and "KG_AUTH_TOKEN" in self._secret["data"]:
+            self._token = base64.b64decode(self._secret["data"]["KG_AUTH_TOKEN"]).decode("utf-8")
+        pod = await self._create_or_get_resource(self._pod)
+        assert pod is not None
+        self._pod = pod
+        service = await self._create_or_get_resource(self._service)
+        assert service is not None
+        self._service = service
+        if self._service:
+            for p in self._service["spec"]["ports"]:
+                if p.get("name", "") == "jupyter":
+                    self._port = p["port"]
 
         self._pod = await wait_for_ready(
             self._kube_config,
@@ -643,7 +665,8 @@ class PodJupyterServer(Component[PodJupyterServerConfig], ComponentBase[BaseMode
         exc_val: Optional[BaseException],
         exc_tb: Optional[TracebackType],
     ) -> None:
-        await self.stop()
+        if self._auto_remove:
+            await self.stop()
 
     def _to_config(self) -> PodJupyterServerConfig:
         """(Experimental) Convert the component to a config object"""
@@ -662,7 +685,7 @@ class PodJupyterServer(Component[PodJupyterServerConfig], ComponentBase[BaseMode
             command=self._command,
             service_spec=self._service,
             token=SecretStr(self._token),
-            secret_spec=SecretStr(str(self._secret)),
+            secret_spec=SecretStr(json.dumps(self._secret)),
         )
 
     @classmethod
