@@ -347,7 +347,8 @@ class PodJupyterServer(Component[PodJupyterServerConfig], ComponentBase[BaseMode
                 self._secret = manifest_from_secret_spec
             else:
                 warnings.warn(
-                    "Secret spec has no data or stringData for KG_AUTH_TOKEN. Will use the token parameter or auto generated token."
+                    "Secret spec has no data or stringData for KG_AUTH_TOKEN. Will use the token parameter or auto generated token.",
+                    stacklevel=2,
                 )
         if pod_spec is not None:
             manifest_from_pod_spec = self._read_from_resource_spec("Pod", pod_spec)
@@ -475,6 +476,8 @@ class PodJupyterServer(Component[PodJupyterServerConfig], ComponentBase[BaseMode
         for c in spec["spec"]["containers"]:
             if c.get("name", "") == self._container_name:
                 has_executor_container = True
+                # do not override command, args, workingDir
+                # user may not want to override default value
                 if "image" not in c:
                     c["image"] = executor_container["image"]
                 if "ports" not in c:
@@ -497,8 +500,6 @@ class PodJupyterServer(Component[PodJupyterServerConfig], ComponentBase[BaseMode
                             break
                     if not has_kg_port:
                         c["env"].extend(executor_container["env"])
-                if "workingDir" not in c:
-                    c["workingDir"] = executor_container["workingDir"]
                 if self._secret is not None:
                     if "envFrom" not in c:
                         c["envFrom"] = executor_container["envFrom"]
@@ -532,16 +533,17 @@ class PodJupyterServer(Component[PodJupyterServerConfig], ComponentBase[BaseMode
                     {"mountPath": executor_container["workingDir"], "name": self._volume["name"]}
                 ]
             self._pod["spec"]["containers"].append(executor_container)
-        if "volumes" not in spec["spec"] and self._pod["spec"]["volumes"] is not None:
-            spec["spec"]["volumes"] = self._pod["spec"]["volumes"]
-        elif "volumes" in spec["spec"] and self._pod["spec"]["volumes"] is not None:
-            has_volume = False
-            for v in spec["spec"]["volumes"]:
-                if v.get("name", "") == self._pod["spec"]["volumes"][0]["name"]:
-                    has_volume = True
-                    break
-            if not has_volume:
-                spec["spec"]["volumes"].append(self._pod["spec"]["volumes"][0])
+        if self._volume:
+            if "volumes" not in spec["spec"]:
+                spec["spec"]["volumes"] = self._pod["spec"]["volumes"]
+            elif "volumes" in spec["spec"]:
+                has_volume = False
+                for v in spec["spec"]["volumes"]:
+                    if v.get("name", "") == self._pod["spec"]["volumes"][0]["name"]:
+                        has_volume = True
+                        break
+                if not has_volume:
+                    spec["spec"]["volumes"].append(self._pod["spec"]["volumes"][0])
         if "automountServiceAccountToken" not in spec["spec"]:
             spec["spec"]["automountServiceAccountToken"] = False
         return spec
