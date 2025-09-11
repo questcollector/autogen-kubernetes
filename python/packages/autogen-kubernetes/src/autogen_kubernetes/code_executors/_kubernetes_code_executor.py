@@ -61,6 +61,7 @@ from ._utils import (
     create_namespaced_corev1_resource,
     delete_namespaced_corev1_resource,
     get_file_name_from_content,
+    get_namespaced_corev1_resource,
     get_pod_logs,
     lang_to_cmd,
     pod_exec_stream,
@@ -618,8 +619,15 @@ class PodCommandLineCodeExecutor(CodeExecutor, Component[PodCommandLineCodeExecu
     async def stop(self) -> None:
         await self.remove()
 
+    async def _create_or_get_resource(self, spec: dict[str, Any]) -> dict[str, Any]:
+        resource: dict[str, Any] = await get_namespaced_corev1_resource(self._kube_config, spec)
+        if not resource:
+            resource = await create_namespaced_corev1_resource(self._kube_config, spec)
+
+        return resource
+
     async def start(self) -> None:
-        self._pod = await create_namespaced_corev1_resource(self._kube_config, self._pod)
+        self._pod = await self._create_or_get_resource(self._pod)
 
         self._pod = await wait_for_ready(
             self._kube_config,
@@ -663,7 +671,8 @@ class PodCommandLineCodeExecutor(CodeExecutor, Component[PodCommandLineCodeExecu
         exc_val: Optional[BaseException],
         exc_tb: Optional[TracebackType],
     ) -> Optional[bool]:
-        await self.remove()
+        if self._auto_remove:
+            await self.remove()
         return None
 
     def _to_config(self) -> PodCommandLineCodeExecutorConfig:

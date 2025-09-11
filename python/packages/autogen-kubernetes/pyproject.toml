@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "autogen-kubernetes"
-version = "0.6.1"
+version = "0.6.2"
 license = {file = "LICENSE-CODE"}
 description = "autogen kubernetes extension"
 keywords = ["autogen", "agent", "AI", "kubernetes"]

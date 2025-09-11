@@ -20,6 +20,7 @@ from autogen_core.code_executor import (
     with_requirements,
 )
 from autogen_kubernetes.code_executors import PodCommandLineCodeExecutor
+from autogen_kubernetes.code_executors._utils import get_namespaced_corev1_resource
 from conftest import kubernetes_enabled, state_kubernetes_enabled
 
 logging.basicConfig(level=logging.DEBUG)
@@ -99,6 +100,32 @@ async def test_pod_default(generated_pod_name_regex: str) -> None:
         assert re.fullmatch(generated_pod_name_regex, executor._pod_name) is not None
         assert code_result.exit_code == 0
         assert "Hello, World!" in code_result.output
+
+
+@pytest.mark.skipif(not state_kubernetes_enabled, reason="kubernetes not accessible")
+@pytest.mark.asyncio
+async def test_pod_auto_remove_false(kubeconfig: Any, generated_pod_name_regex: str) -> None:
+    executor = PodCommandLineCodeExecutor()
+    async with executor:
+        first_pod = await get_namespaced_corev1_resource(kubeconfig, executor._pod)
+
+    # pod will not be removed
+
+    async with executor:
+        second_pod = executor._pod
+        assert first_pod["metadata"]["creationTimestamp"] == second_pod["metadata"]["creationTimestamp"]
+        code_result = await executor.execute_code_blocks(
+            code_blocks=[
+                CodeBlock(language="python", code="print('Hello, World!')"),
+            ],
+            cancellation_token=CancellationToken(),
+        )
+        assert re.fullmatch(generated_pod_name_regex, executor._pod_name) is not None
+        assert code_result.exit_code == 0
+        assert "Hello, World!" in code_result.output
+
+    # remove pod
+    await executor.stop()
 
 
 @pytest.mark.skipif(not state_kubernetes_enabled, reason="kubernetes not accessible")

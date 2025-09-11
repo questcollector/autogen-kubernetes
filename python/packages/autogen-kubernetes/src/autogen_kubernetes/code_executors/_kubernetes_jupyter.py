@@ -270,6 +270,7 @@ class PodJupyterCodeExecutor(CodeExecutor, Component[PodJupyterCodeExecutorConfi
                 break
             except (
                 httpx.ConnectError,
+                httpx.ConnectTimeout,
                 httpx.HTTPStatusError,
                 AssertionError,
                 json.decoder.JSONDecodeError,

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "autogen-kubernetes-mcp"
-version = "0.6.1"
+version = "0.6.2"
 description = "MPC server provides code interpreter with kubernetes workload"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -14,7 +14,7 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 dependencies = [
-    "autogen-kubernetes>=0.5.2",
+    "autogen-kubernetes>=0.6.2",
     "mcp>=1.12.2",
 ]
 

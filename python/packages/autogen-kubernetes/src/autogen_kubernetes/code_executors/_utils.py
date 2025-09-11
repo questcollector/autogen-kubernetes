@@ -53,6 +53,8 @@ class HttpStatusCode(IntEnum):
     OK = 200
     CREATED = 201
     ACCEPTED = 202
+    NO_CONTENT = 204
+    NOT_FOUND = 404
 
 
 POD_NAME_PATTERN = r"^[a-z0-9](?:[a-z0-9-]{0,61})[a-z0-9]?$"
@@ -227,6 +229,30 @@ async def get_pod_logs(
             response.raise_for_status()
 
 
+async def get_namespaced_corev1_resource(kube_config: Any, resource_spec: dict[str, Any]) -> Any:
+    api_server_url = kube_config.host
+    ssl_context, headers = _create_ssl_context_and_headers(kube_config)
+    headers.update(
+        {
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        }
+    )
+    namespace = resource_spec["metadata"]["namespace"]
+    name = resource_spec["metadata"]["name"]
+    kind = str(resource_spec["kind"]).lower() + "s"
+    url = f"{api_server_url}/api/v1/namespaces/{namespace}/{kind}/{name}"
+    async with httpx.AsyncClient(verify=ssl_context) as httpx_client:
+        response = await httpx_client.get(url, headers=headers)
+        if response.status_code == HttpStatusCode.OK:
+            return response.json()
+        elif response.status_code == HttpStatusCode.NOT_FOUND:
+            return {}
+        else:
+            logging.info(f"Failed to get {kind[:-1]}: {response.status_code}")
+            response.raise_for_status()
+
+
 async def create_namespaced_corev1_resource(
     kube_config: Any, resource_spec: dict[str, Any], dry_run: bool = False
 ) -> Any:
@@ -247,10 +273,10 @@ async def create_namespaced_corev1_resource(
 
     async with httpx.AsyncClient(verify=ssl_context) as httpx_client:
         response = await httpx_client.post(url, headers=headers, json=resource_spec)
-        if response.status_code == HttpStatusCode.CREATED:
+        if response.status_code in [HttpStatusCode.OK, HttpStatusCode.CREATED, HttpStatusCode.ACCEPTED]:
             return response.json()
         else:
-            logging.info("Failed to create pod: {response.status_code}")
+            logging.info(f"Failed to create {kind[:-1]}: {response.status_code}")
             response.raise_for_status()
 
 
@@ -269,8 +295,10 @@ async def delete_namespaced_corev1_resource(kube_config: Any, resource: dict[str
         response = await httpx_client.delete(url, headers=headers)
         if response.status_code in [HttpStatusCode.OK, HttpStatusCode.ACCEPTED]:
             return response.json()
+        elif response.status_code in [HttpStatusCode.NO_CONTENT, HttpStatusCode.NOT_FOUND]:
+            return {}
         else:
-            logging.info("Failed to get pod status: {response.status_code}")
+            logging.info(f"Failed to delete {kind[:-1]}: {response.status_code}")
             response.raise_for_status()
 
 
